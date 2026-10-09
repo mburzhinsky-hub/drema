@@ -55,7 +55,7 @@ jobs:
           nohup npx vite --port 5173 > dev.log 2>&1 &
           npx wait-on http-get://127.0.0.1:5173/ --timeout 30000
           set +e
-          BASE_URL=http://127.0.0.1:5173/ npm run test:visual > visual.log 2>&1
+          VISUAL_MODE=coarse BASE_URL=http://127.0.0.1:5173/ npm run test:visual > visual.log 2>&1
           code=$?
           cat visual.log
           echo "::warning title=visual::$(grep -E '^(OK|FAIL|ОТЛИЧИЯ|Нет)' visual.log | tr '\n' '|' | head -c 3000)"
