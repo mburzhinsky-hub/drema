@@ -70,6 +70,8 @@ async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
+    // Без подгонки контуров букв под пиксельную сетку ширина текста одинакова на разных машинах.
+    args: ['--font-render-hinting=none'],
   });
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 844 },

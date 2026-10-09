@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173/';
 const fixture = process.argv[2] ?? 'why';
 
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--font-render-hinting=none'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, reducedMotion: 'reduce', locale: 'ru-RU', timezoneId: 'Europe/Moscow' });
 const page = await ctx.newPage();
 await page.goto(`${BASE}?fixture=${fixture}`, { waitUntil: 'networkidle' });
