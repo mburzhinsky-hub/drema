@@ -47,25 +47,20 @@ jobs:
           cat offline.log
           if [ $code -ne 0 ]; then echo "::error title=offline::$(tr '\n' '|' < offline.log | head -c 6000)"; fi
           exit $code
-      # Эталоны сняты в одном окружении; на другой версии Chromium края букв могут сглаживаться чуть иначе.
-      # Поэтому шаг не блокирует сборку, а оставляет картинки расхождений для просмотра.
+      # Эталоны сняты в одном окружении, а края букв в разных сборках Chromium сглаживаются чуть иначе
+      # (на раннере 0,2–1 % отличающихся пикселей, и все они — по краям букв). Поэтому здесь сравнение
+      # «грубое»: снимки усредняются блоками 4×4, и сдвиг блока, другой цвет или потерянный элемент
+      # по-прежнему ломают сборку. Строгая попиксельная сверка (допуск 0,1 %) — у разработчика: npm run test:visual.
       - name: Сверка с макетом
-        continue-on-error: true
         run: |
           nohup npx vite --port 5173 > dev.log 2>&1 &
           npx wait-on http-get://127.0.0.1:5173/ --timeout 30000
           set +e
-          BASE_URL=http://127.0.0.1:5173/ npm run test:visual > visual.log 2>&1
+          VISUAL_MODE=coarse BASE_URL=http://127.0.0.1:5173/ npm run test:visual > visual.log 2>&1
           code=$?
           cat visual.log
-          echo "::warning title=visual::$(grep -E '^(OK|FAIL|ОТЛИЧИЯ|Нет)' visual.log | tr '\n' '|' | head -c 3000)"
+          if [ $code -ne 0 ]; then echo "::error title=visual::$(grep -E '^(OK|FAIL)' visual.log | tr '\n' '|' | head -c 3000)"; fi
           exit $code
-      - name: Диагностика отличий экрана «Почему так?»
-        if: always()
-        continue-on-error: true
-        run: |
-          BASE_URL=http://127.0.0.1:5173/ npx tsx tools/visual/probe.ts why > probe.log 2>&1 || true
-          echo "::notice title=probe::$(tr '\n' '|' < probe.log | head -c 5000)"
       - name: Картинки расхождений
         if: always()
         uses: actions/upload-artifact@v4
