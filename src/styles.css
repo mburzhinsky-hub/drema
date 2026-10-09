@@ -1,0 +1,190 @@
+/* Оболочка и общие правила. Сами экраны оформлены так же, как в макете, — стилями прямо в разметке. */
+
+/* Глобального box-sizing нет намеренно: размеры в макете заданы так, как их рисовали, и экраны обязаны совпасть с ним до пикселя. */
+.sheet, .sheet *, .toast, .toast *, .field, .plain, .plain * { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #E9EBF5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  color: #14172E;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #F1F3FB;
+}
+
+/* На широком экране приложение — «телефон» посередине. */
+@media (min-width: 560px) and (min-height: 760px) {
+  body { display: flex; align-items: center; justify-content: center; }
+  #app {
+    height: min(100dvh - 48px, 880px);
+    border-radius: 40px;
+    box-shadow: 0 40px 90px -30px rgba(34, 31, 102, 0.45), 0 0 0 1px rgba(34, 31, 102, 0.06);
+  }
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-appearance: none; appearance: none; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid #FFD66B;
+  outline-offset: 2px;
+}
+button:active:not(:disabled), a:active { transform: scale(0.985); }
+button, a { transition: transform 0.12s ease; }
+button:disabled { cursor: default; }
+
+/* Экран прокручивается внутри, нижняя навигация стоит на месте. */
+.scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll::-webkit-scrollbar { display: none; }
+
+/* Шторка */
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(20, 23, 46, 0.42);
+  animation: fade-in 0.2s ease both;
+}
+:root {
+  --s-bg: #F1F3FB;
+  --s-fg: #14172E;
+  --s-muted: #5A5F7A;
+  --s-card: #FFFFFF;
+  --s-line: #D7DAEC;
+  --s-seg: #E4E7F4;
+  --s-accent: #3F3CBB;
+  --s-soft: #E6E6FB;
+  --s-warn-bg: #FDE8E2;
+  --s-warn-fg: #A8341F;
+}
+.sheet {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 41;
+  max-height: 92%;
+  display: flex;
+  flex-direction: column;
+  background: var(--s-bg);
+  color: var(--s-fg);
+  font-family: 'Nunito', system-ui, sans-serif;
+  border-radius: 32px 32px 0 0;
+  box-shadow: 0 -30px 60px -30px rgba(34, 31, 102, 0.45);
+  animation: slide-up 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  outline: none;
+}
+/* Ночью шторки тёмные, чтобы не слепить. */
+.sheet.dark {
+  --s-bg: #14163A;
+  --s-fg: #ECEBFF;
+  --s-muted: #A3A6C9;
+  --s-card: #1E2148;
+  --s-line: #3A3D7A;
+  --s-seg: #0B0D1C;
+  --s-accent: #5A57EC;
+  --s-soft: #2A2D66;
+  --s-warn-bg: #4A2A26;
+  --s-warn-fg: #FFB4A3;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* Уведомление внизу */
+.toast {
+  position: absolute;
+  left: 16px; right: 16px; bottom: 100px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 8px 8px 18px;
+  border-radius: 26px;
+  background: #14172E;
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 20px 40px -18px rgba(20, 23, 46, 0.7);
+  animation: toast-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.toast.high { bottom: 24px; }
+/* Пока открыта шторка, уведомление уходит наверх, чтобы не закрывать кнопки. */
+.toast.top { top: 12px; bottom: auto; }
+
+/* Колонки с прокруткой: дети не сжимаются, а прокручиваются. */
+.stack > *, .sheet .scroll > * { flex: none; }
+@keyframes toast-in { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Пульсация кнопки голоса */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(255, 214, 107, 0.55); }
+  100% { box-shadow: 0 0 0 22px rgba(255, 214, 107, 0); }
+}
+.listening { animation: pulse-ring 1.2s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+}
+
+/* Поля ввода в стиле макета */
+.field {
+  width: 100%;
+  height: 52px;
+  border: 1.5px solid var(--s-line, #D7DAEC);
+  border-radius: 18px;
+  background: var(--s-card, #FFFFFF);
+  padding: 0 16px;
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-size: 16px;
+  color: var(--s-fg, #14172E);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: light;
+}
+.sheet.dark .field { color-scheme: dark; }
+.field:focus { border-color: var(--s-accent, #3F3CBB); box-shadow: 0 0 0 3px rgba(63, 60, 187, 0.22); }
+.field::placeholder { color: #8A90AB; }
+textarea.field { height: auto; min-height: 92px; padding: 14px 16px; resize: none; line-height: 22px; }
+
+/* Печать выписки: прячем приложение, показываем лист. */
+#print-sheet { display: none; }
+@media print {
+  html, body { background: #FFFFFF; height: auto; }
+  #app { display: none !important; }
+  #print-sheet {
+    display: block;
+    font-family: 'Nunito', system-ui, sans-serif;
+    color: #14172E;
+    padding: 24px 32px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  #print-sheet h1 { font-family: 'Yeseva One', Georgia, serif; font-weight: 400; font-size: 30px; margin: 0 0 4px; }
+  #print-sheet h2 { font-size: 13px; letter-spacing: 0.1em; margin: 22px 0 6px; color: #5A5F7A; }
+  #print-sheet p, #print-sheet li { font-size: 15px; line-height: 22px; margin: 0; }
+  #print-sheet ul { margin: 0; padding-left: 20px; }
+  #print-sheet .foot { margin-top: 28px; font-size: 12px; color: #5A5F7A; }
+}

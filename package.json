@@ -1,0 +1,39 @@
+{
+  "name": "drema",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Дрёма — трекер сна и кормления малыша, который знает, когда спать",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:visual": "tsx tools/visual/run.ts",
+    "icons": "tsx tools/make-icons.ts",
+    "screens": "tsx tools/make-screens.ts",
+    "test:e2e": "tsx tools/e2e/run.ts",
+    "test:offline": "tsx tools/e2e/offline.ts"
+  },
+  "dependencies": {
+    "@fontsource/nunito": "^5.3.0",
+    "@fontsource/yeseva-one": "^5.3.0",
+    "lit-html": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^8.0.0",
+    "playwright": "^1.64.0",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3",
+    "wait-on": "^9.5.1"
+  }
+}

@@ -1,0 +1,46 @@
+name: Проверки
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Типы
+        run: npm run typecheck
+      - name: Модульные тесты
+        run: npm test
+      - name: Сборка
+        run: npm run build
+      - name: Браузер для проверок
+        run: npx playwright install --with-deps chromium
+      - name: Сценарии в браузере (на собранной версии)
+        run: |
+          npx vite preview --port 4173 &
+          npx wait-on http-get://localhost:4173/ --timeout 30000
+          BASE_URL=http://localhost:4173/ npm run test:e2e
+          npm run test:offline
+      # Эталоны сняты в одном окружении; на другой версии Chromium края букв могут сглаживаться чуть иначе.
+      # Поэтому шаг не блокирует сборку, а оставляет картинки расхождений для просмотра.
+      - name: Сверка с макетом
+        continue-on-error: true
+        run: |
+          npx vite --port 5173 &
+          npx wait-on http-get://localhost:5173/ --timeout 30000
+          npm run test:visual
+      - name: Картинки расхождений
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: .visual/
+          if-no-files-found: ignore
