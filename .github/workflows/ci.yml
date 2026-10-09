@@ -66,4 +66,5 @@ jobs:
         with:
           name: visual-diff
           path: .visual/
+          include-hidden-files: true
           if-no-files-found: ignore
