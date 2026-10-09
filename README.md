@@ -49,7 +49,7 @@ npm run preview    # посмотреть собранную версию, http:
 npm run typecheck     # типы
 npm test              # модульные тесты (≈470)
 npm run test:visual   # сверка 8 экранов с макетом V3 (нужен запущенный npm run dev)
-npm run test:e2e      # 21 сценарий в настоящем Chromium (нужен npm run dev или preview)
+npm run test:e2e      # 24 сценария в настоящем Chromium (нужен npm run dev или preview)
 npm run test:offline  # service worker и работа без сети (нужен npm run preview)
 ```
 

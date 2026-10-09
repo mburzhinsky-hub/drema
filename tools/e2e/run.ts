@@ -13,7 +13,28 @@ const START = new Date('2026-10-10T14:00:00+03:00');
 let browser: Browser;
 const results: Array<{ name: string; ok: boolean; err?: string }> = [];
 
-async function fresh(opts: { time?: Date; state?: unknown } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
+/** Какое распознавание речи видит страница: нет совсем, исправное (подставной распознаватель) или без доступа к микрофону. */
+type Speech = 'none' | 'fake' | 'denied';
+
+const SPEECH_SCRIPT: Record<Speech, string> = {
+  none: `for (const k of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, k, { value: undefined, configurable: true, writable: true });`,
+  fake: `
+    class FakeSR {
+      start() { setTimeout(() => this.onresult && this.onresult({ results: [Object.assign([{ transcript: window.__phrase || 'покормила 90 мл' }], { isFinal: true })] }), 60); }
+      stop() { setTimeout(() => this.onend && this.onend(), 0); }
+      abort() {}
+    }
+    window.webkitSpeechRecognition = FakeSR; window.SpeechRecognition = FakeSR;`,
+  denied: `
+    class DeniedSR {
+      start() { setTimeout(() => this.onerror && this.onerror({ error: 'not-allowed' }), 60); }
+      stop() {}
+      abort() {}
+    }
+    window.webkitSpeechRecognition = DeniedSR; window.SpeechRecognition = DeniedSR;`,
+};
+
+async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 844 },
     locale: 'ru-RU',
@@ -26,6 +47,8 @@ async function fresh(opts: { time?: Date; state?: unknown } = {}): Promise<{ ctx
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e}`));
   page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
+  // Без явного указания речи нет: так сценарии не зависят от версии Chromium (в новых она есть, в старых нет).
+  await page.addInitScript(SPEECH_SCRIPT[opts.speech ?? 'none']);
   await page.clock.install({ time: opts.time ?? START });
   return { ctx, page, errors };
 }
@@ -40,6 +63,15 @@ async function onboard(page: Page, name = 'Мила', birth = '2026-05-10'): Pro
 }
 
 const hash = (page: Page): Promise<string> => page.evaluate(() => location.hash);
+
+/** Переход происходит на ближайшем кадре, поэтому адрес ждём, а не читаем сразу (на медленной машине кадр приходит позже). */
+async function expectHash(page: Page, want: string, timeout = 4000): Promise<void> {
+  try {
+    await page.waitForFunction((h) => location.hash === h, want, { timeout });
+  } catch {
+    assert.fail(`ожидали адрес ${want}, а сейчас ${await hash(page)}`);
+  }
+}
 const text = (page: Page): Promise<string> => page.evaluate(() => document.body.innerText);
 
 /** Экран перерисовывается на ближайшем кадре, поэтому ждём, а не читаем сразу. */
@@ -74,9 +106,9 @@ async function main(): Promise<void> {
   await test('первый запуск: заставка → знакомство → главный экран', async () => {
     const { ctx, page, errors } = await fresh();
     await page.goto(BASE, { waitUntil: 'load' });
-    assert.equal(await hash(page), '#/welcome');
+    await expectHash(page, '#/welcome');
     await page.getByRole('button', { name: /Начать/ }).click();
-    assert.equal(await hash(page), '#/onboarding');
+    await expectHash(page, '#/onboarding');
     // пустая форма — понятная ошибка, а не молчание
     await page.getByRole('button', { name: 'Начать' }).click();
     await has(page, /Напишите имя малыша/);
@@ -100,7 +132,7 @@ async function main(): Promise<void> {
     const { ctx, page, errors } = await fresh();
     await onboard(page);
     await page.getByRole('button', { name: 'Уснула' }).click();
-    assert.equal(await hash(page), '#/sleeping');
+    await expectHash(page, '#/sleeping');
     await has(page, /Мила спит/);
     await has(page, /Уснула в 14:00/);
     await page.getByRole('button', { name: 'Отменить' }).click();
@@ -245,6 +277,44 @@ async function main(): Promise<void> {
     await ctx.close();
   });
 
+  await test('голос (распознавание есть): говорим, видим текст, подтверждаем, запись в журнале', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'fake' });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await has(page, /Говорите/);
+    await has(page, /покормила 90 мл/);
+    await page.getByRole('button', { name: 'Готово' }).click();
+    await has(page, /Записать\?/);
+    await has(page, /Кормление · 90 мл/);
+    await page.getByRole('button', { name: 'Записать', exact: true }).click();
+    await has(page, /Бутылочка · 90 мл/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('голос (распознавание есть): можно отказаться от голоса и набрать фразу', async () => {
+    const { ctx, page } = await fresh({ speech: 'fake' });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await page.getByRole('button', { name: 'Набрать вместо голоса' }).click();
+    await page.getByLabel('Фраза').fill('поменяла подгузник');
+    await page.getByRole('button', { name: 'Разобрать' }).click();
+    await has(page, /Подгузник · мокрый/);
+    await ctx.close();
+  });
+
+  await test('голос: нет доступа к микрофону — понятное сообщение и поле для набора', async () => {
+    const { ctx, page } = await fresh({ speech: 'denied' });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await has(page, /Нет доступа к микрофону/);
+    await page.getByLabel('Фраза').waitFor({ timeout: 4000 });
+    await ctx.close();
+  });
+
   await test('несколько детей: добавить, переключить, удалить с подтверждением', async () => {
     const { ctx, page, errors } = await fresh();
     await onboard(page);
@@ -304,7 +374,7 @@ async function main(): Promise<void> {
   await test('автоночь: ночью открывается тёмный экран, выход держится до утра', async () => {
     const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T23:30:00+03:00') });
     await onboard(page);
-    assert.equal(await hash(page), '#/night');
+    await expectHash(page, '#/night');
     await has(page, /Ночной режим/);
     await page.getByRole('button', { name: 'Подгузник' }).click();
     await page.locator('.sheet.dark').waitFor({ timeout: 3000 });
@@ -321,10 +391,10 @@ async function main(): Promise<void> {
     const { ctx, page } = await fresh({ time: new Date('2026-10-10T23:30:00+03:00') });
     await onboard(page);
     await page.getByRole('button', { name: 'Уснула' }).click();
-    assert.equal(await hash(page), '#/night');
+    await expectHash(page, '#/night');
     await has(page, /Спит с 23:30/);
     await page.getByRole('button', { name: 'Проснулась' }).click();
-    assert.equal(await hash(page), '#/night');
+    await expectHash(page, '#/night');
     await ctx.close();
   });
 
@@ -408,7 +478,7 @@ async function main(): Promise<void> {
     await has(page, /Мила/);
     await has(page, /ПРОГНОЗ СНА/);
     await page.getByRole('link', { name: /Почему так/ }).click();
-    assert.equal(await hash(page), '#/why');
+    await expectHash(page, '#/why');
     await has(page, /Почему/);
     await page.getByRole('link', { name: 'Назад' }).click();
     await page.getByRole('button', { name: 'Выбрать ребёнка' }).click();
