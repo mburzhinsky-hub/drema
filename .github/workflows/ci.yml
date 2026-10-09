@@ -23,12 +23,30 @@ jobs:
         run: npm run build
       - name: Браузер для проверок
         run: npx playwright install --with-deps chromium
+      - name: Запуск собранной версии
+        run: |
+          nohup npx vite preview --port 4173 > preview.log 2>&1 &
+          if ! npx wait-on http-get://127.0.0.1:4173/ --timeout 30000; then
+            echo "::error title=preview::$(tr '\n' ' ' < preview.log | head -c 3000)"
+            exit 1
+          fi
       - name: Сценарии в браузере (на собранной версии)
         run: |
-          npx vite preview --port 4173 &
-          npx wait-on http-get://localhost:4173/ --timeout 30000
-          BASE_URL=http://localhost:4173/ npm run test:e2e
-          npm run test:offline
+          set +e
+          BASE_URL=http://127.0.0.1:4173/ npm run test:e2e > e2e.log 2>&1
+          code=$?
+          cat e2e.log
+          # Журнал ещё и в аннотацию: так причину видно, не скачивая логи.
+          if [ $code -ne 0 ]; then echo "::error title=e2e::$(grep -v '^OK' e2e.log | tr '\n' '|' | head -c 6000)"; fi
+          exit $code
+      - name: Офлайн
+        run: |
+          set +e
+          BASE_URL=http://127.0.0.1:4173/ npm run test:offline > offline.log 2>&1
+          code=$?
+          cat offline.log
+          if [ $code -ne 0 ]; then echo "::error title=offline::$(tr '\n' '|' < offline.log | head -c 6000)"; fi
+          exit $code
       # Эталоны сняты в одном окружении; на другой версии Chromium края букв могут сглаживаться чуть иначе.
       # Поэтому шаг не блокирует сборку, а оставляет картинки расхождений для просмотра.
       - name: Сверка с макетом
