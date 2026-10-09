@@ -60,6 +60,12 @@ jobs:
           cat visual.log
           echo "::warning title=visual::$(grep -E '^(OK|FAIL|ОТЛИЧИЯ|Нет)' visual.log | tr '\n' '|' | head -c 3000)"
           exit $code
+      - name: Диагностика отличий экрана «Почему так?»
+        if: always()
+        continue-on-error: true
+        run: |
+          BASE_URL=http://127.0.0.1:5173/ npx tsx tools/visual/probe.ts why > probe.log 2>&1 || true
+          echo "::notice title=probe::$(tr '\n' '|' < probe.log | head -c 5000)"
       - name: Картинки расхождений
         if: always()
         uses: actions/upload-artifact@v4
