@@ -23,7 +23,7 @@ export function settingsScreen(d: Derived, _t: number): TemplateResult {
   return html`
     <div class="plain" style="position:relative;width:100%;height:100%;background:#F1F3FB;overflow:hidden;font-family:${SANS};color:#14172E">
       ${topGlow(0.14)}
-      <div class="scroll stack" style="position:relative;height:100%;display:flex;flex-direction:column;padding:24px 20px calc(28px + env(safe-area-inset-bottom));gap:14px">
+      <div class="scroll stack" style="position:relative;height:100%;display:flex;flex-direction:column;padding:24px 20px calc(28px + var(--sab, 0px));gap:14px">
         ${backLink('/')}
         <h1 style="margin:6px 0 0;font-family:${SERIF};font-weight:400;font-size:32px;line-height:1.2;letter-spacing:-0.01em">Настройки</h1>
 

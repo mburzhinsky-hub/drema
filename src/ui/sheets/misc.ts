@@ -119,7 +119,7 @@ export function inviteSheet(): TemplateResult {
       ${field({ id: 'i-name', label: 'Кого приглашаете (по желанию)', value: inviteName, placeholder: 'Например, Бабушка', maxlength: 30, onInput: (v) => { inviteName = v; } })}
       <div style="display:flex;flex-direction:column;gap:6px">
         <label for="i-link" style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:var(--s-muted)">ССЫЛКА</label>
-        <input id="i-link" class="field" readonly .value=${inv?.link ?? ''} @focus=${(e: Event) => (e.target as HTMLInputElement).select()} style="font-size:13px" />
+        <input id="i-link" class="field" readonly .value=${inv?.link ?? ''} @focus=${(e: Event) => (e.target as HTMLInputElement).select()} />
       </div>
       ${note('Это снимок на сейчас: у открывшего он обновляется сам по времени, но новые записи не приходят. Чтобы показать свежие, отправьте новую ссылку. Живой общий доступ и права «записывать» появятся вместе с сервером.')}`,
     footer: html`

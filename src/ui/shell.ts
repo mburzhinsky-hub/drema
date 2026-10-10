@@ -34,7 +34,7 @@ function navIcon(key: NavKey, active: boolean): TemplateResult {
 
 export function navBar(active: NavKey): TemplateResult {
   return html`
-    <nav aria-label="Основная навигация" style="flex:none;height:84px;box-sizing:border-box;background:#FFFFFF;border-top:1px solid #E3E6F0;padding:8px 12px 20px;display:flex">
+    <nav aria-label="Основная навигация" style="flex:none;height:calc(64px + max(20px, calc(var(--sab, 0px) - 4px)));box-sizing:border-box;background:#FFFFFF;border-top:1px solid #E3E6F0;padding:8px 12px max(20px, calc(var(--sab, 0px) - 4px));display:flex">
       ${NAV.map((n) => {
         const on = n.key === active;
         return html`<a href=${href(n.path)} aria-current=${on ? 'page' : 'false'} style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;text-decoration:none;color:${on ? '#3F3CBB' : '#5A5F7A'}">

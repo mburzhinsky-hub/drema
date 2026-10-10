@@ -15,11 +15,13 @@ import './styles.css';
 import { start } from './app/app';
 import { applyFixture } from './app/fixture';
 import { startReminders } from './app/reminders';
+import { startViewport } from './app/viewport';
 import { loadFromStorage } from './store/store';
 
 const fx = new URLSearchParams(location.search).get('fixture');
 if (fx) applyFixture(fx);
 else loadFromStorage();
 
+startViewport();
 start({ fixture: !!fx });
 if (!fx) startReminders();

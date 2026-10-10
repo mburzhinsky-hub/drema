@@ -24,7 +24,7 @@ export default defineConfig({
         scope: './',
         display: 'standalone',
         orientation: 'portrait',
-        background_color: '#F1F3FB',
+        background_color: '#1A1850',
         theme_color: '#F1F3FB',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -34,6 +34,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,svg,png,webmanifest}'],
+        // Заставки нужны только iOS при запуске и берутся из сети; в офлайн-кэш (1,5 МБ) их класть незачем.
+        globIgnores: ['splash/**'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
       },

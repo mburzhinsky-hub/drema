@@ -31,8 +31,8 @@ export function frame({ title, body, footer, dark, onClose }: FrameOpts): Templa
       </div>
       <div class="scroll" style="flex:1 1 auto;min-height:0;padding:10px 20px 12px;display:flex;flex-direction:column;gap:14px">${body}</div>
       ${footer
-        ? html`<div style="flex:none;padding:10px 20px calc(22px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px">${footer}</div>`
-        : html`<div style="flex:none;height:calc(10px + env(safe-area-inset-bottom))"></div>`}
+        ? html`<div style="flex:none;padding:10px 20px calc(22px + var(--sab, 0px));display:flex;flex-direction:column;gap:8px">${footer}</div>`
+        : html`<div style="flex:none;height:calc(10px + var(--sab, 0px))"></div>`}
     </div>`;
 }
 

@@ -40,6 +40,13 @@ let lastRouteName: RouteName | '' = '';
 /** Какие маршруты рисуются без нижней навигации. */
 const NO_NAV: ReadonlySet<RouteName> = new Set(['sleeping', 'night', 'welcome', 'onboarding', 'settings', 'why', 'view']);
 const THEME: Partial<Record<RouteName, string>> = { sleeping: '#1A1850', night: '#0B0D1C', welcome: '#221F66' };
+/**
+ * Цвет полосы под строкой состояния на iPhone с вырезом, когда приложение открыто с экрана «Домой».
+ * Статус-бар там белый и полупрозрачный, поэтому на светлых экранах полоса тёмная, а на тёмных совпадает с экраном:
+ * ночью сверху не вспыхивает белое. Без выреза полоса нулевой высоты и ничего не меняет.
+ */
+const TONE: Partial<Record<RouteName, string>> = { sleeping: '#1A1850', night: '#0B0D1C', welcome: '#1A1850' };
+const TONE_LIGHT = '#221F66';
 
 /** Ночь «принадлежит» дате, в которую началась: для 03:00 это вчера. */
 export function nightKey(t: number, nightTo: string): string {
@@ -218,7 +225,7 @@ function draw(): void {
   const sheet = ui.sheet;
   const tpl = html`
     <div style="position:relative;width:100%;height:100%;overflow:hidden">
-      <div style="width:100%;height:100%" ?inert=${!!sheet}>${screenFor(route, s, d, t)}</div>
+      <div class="screen" style="--tone:${TONE[route.name] ?? TONE_LIGHT}" ?inert=${!!sheet}>${screenFor(route, s, d, t)}</div>
       ${sheet
         ? html`<div class="sheet-backdrop" @click=${closeSheet}></div>${sheetView(sheet)}`
         : nothing}

@@ -3,13 +3,30 @@
 /* Глобального box-sizing нет намеренно: размеры в макете заданы так, как их рисовали, и экраны обязаны совпасть с ним до пикселя. */
 .sheet, .sheet *, .toast, .toast *, .field, .plain, .plain * { box-sizing: border-box; }
 
+/* Безопасные зоны экрана (вырез, строка состояния, индикатор «Домой»). Без выреза равны нулю, и вёрстка остаётся как в макете.
+   При открытой клавиатуре нижняя зона не нужна: её закрывает сама клавиатура. */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+}
+html.kb { --sab: 0px; }
+
+/* Страница закреплена: не прокручивается, не «резиновая» и не уезжает, когда выезжает клавиатура.
+   Прокручиваются только внутренние области (.scroll). */
 html, body {
   margin: 0;
+  position: fixed;
+  inset: 0;
+  width: 100%;
   height: 100%;
+  overflow: hidden;
   background: #E9EBF5;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  /* Двойное касание не увеличивает экран, нажатия срабатывают сразу. */
+  touch-action: manipulation;
 }
 
 body {
@@ -17,7 +34,12 @@ body {
   color: #14172E;
   -webkit-font-smoothing: antialiased;
   font-synthesis: none;
+  /* Интерфейс не выделяется долгим нажатием; текст в полях — выделяется. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
+input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 #app {
   position: relative;
@@ -40,7 +62,33 @@ body {
   }
 }
 
+/* На телефоне приложение всегда равно видимой области: когда выезжает клавиатура, оно становится ниже,
+   и шторка с полем стоит прямо над ней. Размер и сдвиг задаёт app/viewport.ts. */
+@media (max-width: 559px), (max-height: 759px) {
+  html.vv #app {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--vv-top, 0px);
+    height: var(--vv-h, 100dvh);
+  }
+}
+
+/* Экран с отступом под строку состояния: полоса сверху окрашена под экран (ночью — тёмная, а не белая). */
+.screen {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding-top: var(--sat);
+  background: linear-gradient(var(--tone, #221F66), var(--tone, #221F66)) top / 100% var(--sat) no-repeat;
+}
+/* Пока набирается текст, нижняя навигация только мешает. */
+/* !important: у самой панели display задан прямо в разметке. */
+html.kb nav[aria-label="Основная навигация"] { display: none !important; }
+
 button, input, textarea, select { font: inherit; color: inherit; }
+/* Поле мельче 16 px заставляет iOS увеличивать страницу при фокусе. */
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), textarea, select { font-size: max(16px, 1em) !important; }
 button { cursor: pointer; -webkit-appearance: none; appearance: none; }
 a { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
@@ -56,6 +104,7 @@ button:disabled { cursor: default; }
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
 }
 .scroll::-webkit-scrollbar { display: none; }
@@ -172,7 +221,7 @@ textarea.field { height: auto; min-height: 92px; padding: 14px 16px; resize: non
 /* Печать выписки: прячем приложение, показываем лист. */
 #print-sheet { display: none; }
 @media print {
-  html, body { background: #FFFFFF; height: auto; }
+  html, body { background: #FFFFFF; height: auto; position: static; overflow: visible; }
   #app { display: none !important; }
   #print-sheet {
     display: block;
