@@ -4,8 +4,9 @@ import { openEntry, openVoice } from '../../app/flows';
 import { addInvitee, deleteMember, patchMember, saveMember, saveProfile, submitLogin, importFromFile } from '../../app/manage';
 import { notifPermission, requestNotifications } from '../../app/reminders';
 import { currentReport } from '../../app/reportData';
+import { screenInfo, screenInfoText } from '../../app/diag';
 import { copyText, inviteLink, shareInvite, shareReport } from '../../app/sharing';
-import { ConfirmSheet, MemberSheet, SimpleSheet, closeSheet, invalidate, showToast, ui } from '../../app/ui';
+import { ConfirmSheet, MemberSheet, SimpleSheet, closeSheet, invalidate, openSheet, showToast, ui } from '../../app/ui';
 import { ROLE_LABEL } from '../screens/family';
 import { Role } from '../../engine/model';
 import { activeChild, updateSettings } from '../../store/actions';
@@ -192,5 +193,27 @@ export function confirmSheet(sh: ConfirmSheet): TemplateResult {
     title: sh.title,
     body: html`<div style="font-size:15px;font-weight:500;line-height:22px">${sh.text}</div>`,
     footer: html`${sh.danger ? danger(sh.confirm, sh.run) : primary(sh.confirm, sh.run)}${quiet('Отмена', closeSheet)}`,
+  });
+}
+
+// ───────────────────────── сведения об экране ─────────────────────────
+
+export function diagSheet(): TemplateResult {
+  const rows = screenInfo();
+  return frame({
+    title: 'Сведения об экране',
+    body: html`
+      ${note('Если что-то на экране стоит не так (поля по краям, пустая полоса, страница уезжает), пришлите скриншот этой шторки или скопируйте текст: по числам видно причину.')}
+      <div style="display:flex;flex-direction:column;border-radius:20px;background:var(--s-card);padding:4px 16px">
+        ${rows.map(
+          (r, i) => html`<div style="padding:10px 0;${i ? 'border-top:1px solid var(--s-line);' : ''}display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:12px;font-weight:700;letter-spacing:0.06em;color:var(--s-muted)">${r.label.toUpperCase()}</span>
+            <span style="font-size:15px;font-weight:600;line-height:20px;word-break:break-word">${r.value}</span>
+          </div>`,
+        )}
+      </div>`,
+    footer: html`
+      ${primary('Скопировать', async () => { if (await copyText(screenInfoText(rows))) showToast('Сведения скопированы'); }, { icon: 'link' })}
+      ${secondary('Обновить', () => openSheet({ kind: 'diag' }))}`,
   });
 }

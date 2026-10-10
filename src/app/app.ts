@@ -47,6 +47,8 @@ const THEME: Partial<Record<RouteName, string>> = { sleeping: '#1A1850', night: 
  */
 const TONE: Partial<Record<RouteName, string>> = { sleeping: '#1A1850', night: '#0B0D1C', welcome: '#1A1850' };
 const TONE_LIGHT = '#221F66';
+/** Цвет страницы за краями приложения: совпадает с фоном экрана. */
+const PAGE_BG: Partial<Record<RouteName, string>> = { sleeping: '#1A1850', night: '#0B0D1C', welcome: '#1A1850' };
 
 /** Ночь «принадлежит» дате, в которую началась: для 03:00 это вчера. */
 export function nightKey(t: number, nightTo: string): string {
@@ -220,6 +222,7 @@ function draw(): void {
     lastRouteName = route.name;
     const theme = document.querySelector('meta[name="theme-color"]');
     theme?.setAttribute('content', THEME[route.name] ?? '#F1F3FB');
+    document.documentElement.style.setProperty('--page-bg', PAGE_BG[route.name] ?? '#F1F3FB');
   }
 
   const sheet = ui.sheet;

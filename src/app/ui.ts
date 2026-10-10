@@ -63,7 +63,7 @@ export interface ConfirmSheet {
 }
 
 export interface SimpleSheet {
-  kind: 'more' | 'reminders' | 'share-report' | 'invite' | 'profile' | 'login';
+  kind: 'more' | 'reminders' | 'share-report' | 'invite' | 'profile' | 'login' | 'diag';
   text?: string;
   error?: string;
 }

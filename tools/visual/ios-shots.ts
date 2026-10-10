@@ -64,4 +64,16 @@ await page.evaluate((h) => (window as unknown as { __vv(h: number): void }).__vv
 await page.evaluate(KEYBOARD(KB));
 await shot('keyboard-onboarding');
 
+// Страница в масштабе 85 % (в Safari «аА» → «Масштаб страницы»): 390 pt = 459 css-пикселей. Приложение должно занять весь экран.
+const zoomed = await browser.newContext({ viewport: { width: 459, height: 994 }, deviceScaleFactor: 2.55, locale: 'ru-RU', timezoneId: 'Europe/Moscow', reducedMotion: 'reduce' });
+const zp = await zoomed.newPage();
+await zp.clock.install({ time: new Date('2026-10-10T13:42:00+03:00') });
+for (const fx of ['splash', 'home', 'night']) {
+  await zp.goto(`${BASE}?fixture=${fx}`, { waitUntil: 'load' });
+  await zp.addStyleTag({ content: SAFE });
+  await zp.waitForTimeout(500);
+  await zp.screenshot({ path: join(OUT, `zoom85-${fx}.png`) });
+  console.log(`снимок zoom85-${fx}`);
+}
+
 await browser.close();

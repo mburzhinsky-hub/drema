@@ -2,7 +2,7 @@ import { TemplateResult } from 'lit-html';
 import { Sheet } from '../../app/ui';
 import { childSheet } from './child';
 import { entrySheet } from './entry';
-import { confirmSheet, inviteSheet, loginSheet, memberSheet, moreSheet, profileSheet, remindersSheet, shareReportSheet } from './misc';
+import { confirmSheet, diagSheet, inviteSheet, loginSheet, memberSheet, moreSheet, profileSheet, remindersSheet, shareReportSheet } from './misc';
 import { sleepEditSheet } from './sleep';
 import { voiceSheet } from './voice';
 
@@ -32,5 +32,7 @@ export function sheetView(s: Sheet): TemplateResult {
       return profileSheet();
     case 'login':
       return loginSheet(s);
+    case 'diag':
+      return diagSheet();
   }
 }

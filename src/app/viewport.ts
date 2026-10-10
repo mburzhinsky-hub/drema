@@ -3,30 +3,67 @@
  *
  * В Safari (и в приложении с экрана «Домой») клавиатура не меняет размер страницы, а накрывает её,
  * и браузер сам «подкручивает» страницу к полю ввода: экран уезжает вверх, а при мелком шрифте ещё и увеличивается.
- * Здесь страница закреплена (см. styles.css), а размер и положение приложения всё время равны видимой области
- * (`visualViewport`): шторка с полем встаёт прямо над клавиатурой, ничего не прыгает.
+ * Здесь страница закреплена (см. styles.css), а пока клавиатуры нет, приложение занимает всё окно целиком
+ * (`inset: 0`, без чисел из JavaScript). Когда клавиатура открыта, приложение сжимается до видимой части.
+ *
+ * Числа `visualViewport` на iOS нельзя брать как есть: в режиме приложения высота видимой области бывает
+ * меньше окна на высоту строки состояния даже без клавиатуры (на скриншотах это пустая полоса внизу).
+ * Поэтому пока поле ввода не в фокусе, запоминаем «как выглядит экран без клавиатуры» (`Baseline`)
+ * и считаем только отклонение от него.
  */
 
-export interface Box {
-  top: number;
-  height: number;
-}
-
-/** Размер и сдвиг видимой области; null — браузер не умеет `visualViewport`. */
+/** Видимая область, как её отдаёт браузер (`visualViewport`). */
 export interface VisibleArea {
   height: number;
   offsetTop: number;
+  /** Масштаб щипком: 1 — не увеличено. */
+  scale?: number;
 }
 
-/** Клавиатура считается открытой, если видимая область стала ниже окна больше чем на столько, px. */
+/** Как выглядит видимая область, когда клавиатуры нет. */
+export interface Baseline {
+  /** Высота видимой области. */
+  height: number;
+  /** Её сдвиг сверху. */
+  top: number;
+  /** Сколько окна остаётся под ней (на iOS в режиме приложения — высота строки состояния). */
+  gap: number;
+}
+
+export interface Insets {
+  /** Отступ приложения сверху, px. */
+  top: number;
+  /** Отступ снизу, px: приложение заканчивается над клавиатурой. */
+  bottom: number;
+  keyboard: boolean;
+}
+
+/** Клавиатура считается открытой, если видимая область стала ниже обычной больше чем на столько, px. */
 export const KEYBOARD_MIN_PX = 120;
+/** Допуск масштаба: при увеличенной щипком странице приложение не трогаем. */
+const SCALE_EPS = 0.02;
 
-export function viewportBox(layoutHeight: number, vv: VisibleArea | null): Box {
-  if (!vv) return { top: 0, height: Math.round(layoutHeight) };
-  return { top: Math.max(0, Math.round(vv.offsetTop)), height: Math.max(0, Math.round(vv.height)) };
+const NO_INSETS: Insets = { top: 0, bottom: 0, keyboard: false };
+
+export function baselineOf(layoutHeight: number, vv: VisibleArea | null): Baseline {
+  if (!vv) return { height: layoutHeight, top: 0, gap: 0 };
+  return { height: vv.height, top: vv.offsetTop, gap: Math.max(0, layoutHeight - vv.offsetTop - vv.height) };
 }
 
-export const keyboardOpen = (layoutHeight: number, vv: VisibleArea | null): boolean => !!vv && layoutHeight - vv.height > KEYBOARD_MIN_PX;
+/**
+ * Где должно стоять приложение. Без клавиатуры — на всё окно (нулевые отступы).
+ * С клавиатурой — от верха видимой области до верха клавиатуры, даже если iOS подкрутила страницу.
+ */
+export function appInsets(layoutHeight: number, vv: VisibleArea | null, base: Baseline): Insets {
+  if (!vv) return NO_INSETS;
+  if (vv.scale !== undefined && Math.abs(vv.scale - 1) > SCALE_EPS) return NO_INSETS;
+  if (base.height - vv.height <= KEYBOARD_MIN_PX) return NO_INSETS;
+  return {
+    top: Math.max(0, Math.round(vv.offsetTop - base.top)),
+    bottom: Math.max(0, Math.round(layoutHeight - (vv.offsetTop + vv.height + base.gap))),
+    keyboard: true,
+  };
+}
 
 /** Какие поля вводят текст: у кнопок, флажков и файлов клавиатуры нет. */
 const TEXTUAL = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', 'datetime-local', '']);
@@ -41,14 +78,20 @@ export function startViewport(win: Window = window, doc: Document = document): (
   const html = doc.documentElement;
   const vv = win.visualViewport;
   let frame = 0;
+  const layoutHeight = (): number => html.clientHeight || win.innerHeight;
+  const area = (): VisibleArea | null => (vv ? { height: vv.height, offsetTop: vv.offsetTop, scale: vv.scale } : null);
+  let base = baselineOf(layoutHeight(), area());
 
   const apply = (): void => {
     frame = 0;
-    const area = vv ? { height: vv.height, offsetTop: vv.offsetTop } : null;
-    const box = viewportBox(win.innerHeight, area);
-    html.style.setProperty('--vv-h', `${box.height}px`);
-    html.style.setProperty('--vv-top', `${box.top}px`);
-    html.classList.toggle('kb', keyboardOpen(win.innerHeight, area));
+    const lh = layoutHeight();
+    const now = area();
+    // Пока поле ввода не в фокусе, клавиатуры нет: это и есть «обычный» вид экрана (поворот, адресная строка, строка состояния).
+    if (!isTextField(doc.activeElement)) base = baselineOf(lh, now);
+    const ins = appInsets(lh, now, base);
+    html.style.setProperty('--app-top', `${ins.top}px`);
+    html.style.setProperty('--app-bottom', `${ins.bottom}px`);
+    html.classList.toggle('kb', ins.keyboard);
     // Страница закреплена, но iOS всё равно пытается её подкрутить: возвращаем на место.
     if (win.scrollX !== 0 || win.scrollY !== 0) win.scrollTo(0, 0);
     if (doc.scrollingElement && doc.scrollingElement.scrollTop !== 0) doc.scrollingElement.scrollTop = 0;
@@ -78,8 +121,13 @@ export function startViewport(win: Window = window, doc: Document = document): (
   win.addEventListener('resize', schedule);
   win.addEventListener('orientationchange', schedule);
   win.addEventListener('scroll', schedule, { passive: true });
+  // Клавиатура уезжает не мгновенно: пересчитываем ещё раз, когда она точно ушла.
+  const onFocusOut = (): void => {
+    schedule();
+    win.setTimeout(schedule, 450);
+  };
   doc.addEventListener('focusin', onFocusIn);
-  doc.addEventListener('focusout', schedule);
+  doc.addEventListener('focusout', onFocusOut);
   apply();
 
   return () => {
@@ -89,6 +137,6 @@ export function startViewport(win: Window = window, doc: Document = document): (
     win.removeEventListener('orientationchange', schedule);
     win.removeEventListener('scroll', schedule);
     doc.removeEventListener('focusin', onFocusIn);
-    doc.removeEventListener('focusout', schedule);
+    doc.removeEventListener('focusout', onFocusOut);
   };
 }

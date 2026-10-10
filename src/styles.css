@@ -20,7 +20,8 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #E9EBF5;
+  /* Цвет за краями приложения подстраивается под экран (задаёт app.ts), чтобы любая щель не бросалась в глаза. */
+  background: var(--page-bg, #E9EBF5);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
@@ -54,6 +55,7 @@ input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-ca
 
 /* На широком экране приложение — «телефон» посередине. */
 @media (min-width: 560px) and (min-height: 760px) {
+  html, body { background: #E9EBF5; }
   body { display: flex; align-items: center; justify-content: center; }
   #app {
     height: min(100dvh - 48px, 880px);
@@ -62,16 +64,21 @@ input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-ca
   }
 }
 
-/* На телефоне приложение всегда равно видимой области: когда выезжает клавиатура, оно становится ниже,
-   и шторка с полем стоит прямо над ней. Размер и сдвиг задаёт app/viewport.ts. */
+/* На телефоне приложение занимает окно целиком (top/bottom: 0), без чисел из JavaScript и на любой ширине: браузер может
+   показывать страницу крупнее или мельче 390 px (масштаб страницы, режим приложения), и по краям не должно оставаться полос.
+   Только пока открыта клавиатура, app/viewport.ts задаёт отступы, и шторка с полем встаёт прямо над ней. */
 @media (max-width: 559px), (max-height: 759px) {
   html.vv #app {
     position: fixed;
     left: 0;
     right: 0;
-    top: var(--vv-top, 0px);
-    height: var(--vv-h, 100dvh);
+    top: var(--app-top, 0px);
+    bottom: var(--app-bottom, 0px);
+    height: auto;
   }
+}
+@media (max-width: 559px) {
+  #app { max-width: none; }
 }
 
 /* Экран с отступом под строку состояния: полоса сверху окрашена под экран (ночью — тёмная, а не белая). */

@@ -40,10 +40,10 @@ const SPEECH_SCRIPT: Record<Speech, string> = {
  * при клавиатуре visualViewport становится ниже окна, а при «подкрутке» страницы получает сдвиг offsetTop.
  * window.__vv(высота, сдвиг) — «клавиатура выехала / ушла».
  */
-const FAKE_VISUAL_VIEWPORT = `
+const FAKE_VISUAL_VIEWPORT = (idleHeight: number | null): string => `
   (() => {
     const vv = new EventTarget();
-    Object.assign(vv, { width: innerWidth, height: innerHeight, offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1 });
+    Object.assign(vv, { width: innerWidth, height: ${idleHeight ?? 'innerHeight'}, offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1 });
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
     window.__vv = (height, offsetTop = 0) => {
       vv.height = height; vv.offsetTop = offsetTop; vv.pageTop = offsetTop;
@@ -51,9 +51,9 @@ const FAKE_VISUAL_VIEWPORT = `
     };
   })();`;
 
-async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
+async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number } } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 },
+    viewport: opts.viewport ?? { width: 390, height: 844 },
     locale: 'ru-RU',
     timezoneId: 'Europe/Moscow',
     reducedMotion: 'reduce',
@@ -68,7 +68,7 @@ async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyb
   await page.addInitScript(SPEECH_SCRIPT[opts.speech ?? 'none']);
   // esbuild оборачивает именованные функции в __name(): внутри page.evaluate такого помощника нет.
   await page.addInitScript('window.__name = window.__name || ((f) => f);');
-  if (opts.keyboard) await page.addInitScript(FAKE_VISUAL_VIEWPORT);
+  if (opts.keyboard) await page.addInitScript(FAKE_VISUAL_VIEWPORT(opts.vvIdle ?? null));
   await page.clock.install({ time: opts.time ?? START });
   return { ctx, page, errors };
 }
@@ -734,6 +734,77 @@ async function main(): Promise<void> {
         assert.ok(m.nav.height >= 64 + 30 - 1, `${name}: навигация выше индикатора «Домой» (высота ${m.nav.height})`);
       }
     }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+
+  await test('iPhone: iOS занижает видимую область на строку состояния — пустой полосы снизу нет, клавиатура считается точно', async () => {
+    // Скриншот с телефона: без клавиатуры видимая область на 47 px ниже окна, а приложение повторяло её высоту.
+    const { ctx, page, errors } = await fresh({ keyboard: true, vvIdle: 797 });
+    await onboard(page);
+    const idle = await geometry(page);
+    assert.equal(idle.app.top, 0);
+    assert.equal(idle.app.bottom, 844, `приложение доходит до низа окна: ${JSON.stringify(idle.app)}`);
+    assert.equal(idle.kb, false);
+
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await page.getByLabel('Фраза').focus();
+    // клавиатура 336 px: видимая область 844 − 47 − 336 = 461
+    await page.evaluate(() => (window as unknown as { __vv(h: number, t: number): void }).__vv(461, 0));
+    await page.waitForFunction(() => document.documentElement.classList.contains('kb'));
+    await page.waitForTimeout(450);
+    const g = await geometry(page);
+    assert.ok(g.sheet && Math.abs(g.sheet.bottom - (844 - 336)) <= 1, `шторка стоит над клавиатурой: ${JSON.stringify(g.sheet)}`);
+    await page.evaluate(() => (window as unknown as { __vv(h: number, t: number): void }).__vv(797, 0));
+    await page.waitForFunction(() => !document.documentElement.classList.contains('kb'));
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+    await page.waitForTimeout(500);
+    assert.equal((await geometry(page)).app.bottom, 844);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('iPhone: окно шире 390 (масштаб страницы 85 %) — приложение на всё окно, без полос по краям', async () => {
+    // 390 pt при масштабе 85 % — это 459 × 994 css-пикселей; раньше приложение упиралось в 430 и по бокам оставались полосы.
+    for (const vp of [{ width: 459, height: 994 }, { width: 430, height: 932 }, { width: 360, height: 740 }, { width: 559, height: 900 }]) {
+      const { ctx, page, errors } = await fresh({ viewport: vp, time: new Date('2026-10-10T13:42:00+03:00') });
+      for (const fx of ['splash', 'home', 'night']) {
+        await page.goto(`${BASE}?fixture=${fx}`, { waitUntil: 'load' });
+        await page.waitForTimeout(200);
+        const m = await page.evaluate(() => {
+          const r = document.getElementById('app')!.getBoundingClientRect();
+          return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), over: document.documentElement.scrollWidth > innerWidth };
+        });
+        const tag = `${vp.width}×${vp.height}, ${fx}`;
+        assert.deepEqual([m.left, m.top, m.right, m.bottom], [0, 0, vp.width, vp.height], `приложение на всё окно (${tag}): ${JSON.stringify(m)}`);
+        assert.equal(m.over, false, `ничего не вылезает по ширине (${tag})`);
+      }
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  });
+
+  await test('iPhone: сведения об экране — шторка в настройках показывает размеры окна и масштаб', async () => {
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T13:42:00+03:00') });
+    await page.goto(BASE, { waitUntil: 'load' });
+    await page.getByRole('button', { name: /Начать/ }).click();
+    await page.getByRole('button', { name: 'Сначала посмотреть на примере' }).click();
+    await page.getByRole('button', { name: 'Выбрать ребёнка' }).click();
+    await page.getByRole('button', { name: 'Настройки' }).click();
+    await page.getByRole('button', { name: /Сведения об экране/ }).click();
+    await has(page, /ОКНО СТРАНИЦЫ/);
+    await has(page, /390 × 844/);
+    await has(page, /Масштаб страницы\n?.*|МАСШТАБ СТРАНИЦЫ/);
+    const t = await text(page);
+    assert.match(t, /БЕЗОПАСНЫЕ ЗОНЫ/);
+    assert.match(t, /VIEWPORT/);
+    await page.getByRole('button', { name: 'Скопировать' }).click();
+    await has(page, /Сведения скопированы/);
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.match(copied, /Окно страницы: 390 × 844/);
+    assert.match(copied, /Масштаб страницы: 100 %/);
     assert.deepEqual(errors, []);
     await ctx.close();
   });
