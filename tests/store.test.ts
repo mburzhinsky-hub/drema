@@ -109,6 +109,21 @@ describe('сохранение в браузере', () => {
     expect(getState().events.map((e) => e.id)).toEqual(['b']);
   });
 
+  it('выброшенное как непонятное (запись, ребёнок) тоже не пропадает: исходник откладывается', () => {
+    const dirty = { ...saved(), events: [{ id: 'a', childId: 'c1', type: 'sleep', t: 1 }, ...saved().events] };
+    const raw = JSON.stringify(dirty);
+    const ls = fakeStorage({ [STORAGE_KEY]: raw });
+    vi.stubGlobal('localStorage', ls);
+    loadFromStorage();
+    expect(ls.data.get(UNREADABLE_KEY)).toBe(raw);
+
+    const badChild = JSON.stringify({ ...saved(), children: [...saved().children, { id: 'x', name: 'Ветер', birth: 'вчера', gender: 'f' }] });
+    const ls2 = fakeStorage({ [STORAGE_KEY]: badChild });
+    vi.stubGlobal('localStorage', ls2);
+    loadFromStorage();
+    expect(ls2.data.get(UNREADABLE_KEY)).toBe(badChild);
+  });
+
   it('недоступное хранилище (приватный режим, переполнение) не роняет приложение', () => {
     const ls = fakeStorage();
     ls.setItem.mockImplementation(() => {

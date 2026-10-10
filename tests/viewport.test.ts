@@ -95,6 +95,14 @@ describe('layoutScale: масштаб страницы, при котором п
     expect(layoutScale({ ...phone, innerWidth: 993, innerHeight: 459 })).toBe(1.177);
   });
 
+  it('открытая клавиатура укоротила окно — это по-прежнему портрет, масштаб не сжимается', () => {
+    expect(layoutScale({ screenWidth: 360, screenHeight: 740, innerWidth: 360, innerHeight: 340 })).toBe(1);
+    expect(layoutScale({ screenWidth: 360, screenHeight: 640, innerWidth: 360, innerHeight: 300 })).toBe(1);
+    expect(layoutScale({ ...phone, innerWidth: 390, innerHeight: 380 })).toBe(1);
+    // и вместе с масштабом страницы 85 %
+    expect(layoutScale({ ...phone, innerWidth: 459, innerHeight: 420 })).toBe(1.177);
+  });
+
   it('планшеты и компьютеры не трогаем', () => {
     expect(layoutScale({ screenWidth: 820, screenHeight: 1180, innerWidth: 964, innerHeight: 1388 })).toBe(1);
     expect(layoutScale({ screenWidth: 1920, screenHeight: 1080, innerWidth: 1200, innerHeight: 700 })).toBe(1);

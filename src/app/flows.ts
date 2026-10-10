@@ -22,7 +22,7 @@ import {
 } from '../store/actions';
 import { NOTE_MAX } from '../store/state';
 import { getState } from '../store/store';
-import { EntrySheet, SleepEditSheet, closeSheet, hideToast, invalidate, onSheetClose, openSheet, showToast, ui } from './ui';
+import { EntrySheet, SleepEditSheet, VoiceSheet, closeSheet, hideToast, invalidate, onSheetClose, openSheet, showToast, ui } from './ui';
 import { go } from './router';
 import { NOTHING_HEARD, SpeechSession, speechErrorMessage, speechSupported, startSpeech } from './speech';
 import { DiaperKind } from '../engine/model';
@@ -351,13 +351,33 @@ export function deleteEntry(): void {
 /** Текущий сеанс распознавания. Пока он есть, микрофон включён; любой выход из «Говорите» его выключает. */
 let session: SpeechSession | null = null;
 
+/**
+ * Когда «Говорите» перешла на другой шаг. Кнопки соседних шагов стоят на одном месте
+ * («Готово» → «Записать», «Набрать вместо голоса» → «Сказать ещё раз»), и двойной тап
+ * иначе попадал уже во второй шаг: запись без проверки или повторное включение микрофона.
+ */
+let stepAt = 0;
+const TAP_GUARD_MS = 350;
+const tooSoon = (): boolean => performance.now() - stepAt < TAP_GUARD_MS;
+
+/** Меняет шторку «Говорите»; при смене шага запоминает момент. */
+function voiceStep(patch: Partial<VoiceSheet>): void {
+  const sh = ui.sheet;
+  if (sh?.kind !== 'voice') return;
+  if (patch.phase && patch.phase !== sh.phase) stepAt = performance.now();
+  ui.sheet = { ...sh, ...patch };
+  invalidate();
+}
+
 export { speechSupported };
 
 export function openVoice(): void {
   if (!speechSupported()) {
+    stepAt = performance.now();
     openSheet({ kind: 'voice', phase: 'text', transcript: '' });
     return;
   }
+  stepAt = performance.now();
   openSheet({ kind: 'voice', phase: 'listening', transcript: '' });
   startListening();
 }
@@ -367,21 +387,15 @@ function startListening(): void {
   session = startSpeech({
     text: (transcript) => {
       if (ui.sheet?.kind !== 'voice' || ui.sheet.phase !== 'listening') return;
-      ui.sheet = { ...ui.sheet, transcript };
-      invalidate();
+      voiceStep({ transcript });
     },
     end: finishListening,
     error: (code) => {
       session = null;
-      if (ui.sheet?.kind !== 'voice') return;
-      ui.sheet = { ...ui.sheet, phase: 'text', error: speechErrorMessage(code) };
-      invalidate();
+      voiceStep({ phase: 'text', error: speechErrorMessage(code) });
     },
   });
-  if (!session && ui.sheet?.kind === 'voice') {
-    ui.sheet = { ...ui.sheet, phase: 'text', error: 'Микрофон недоступен. Наберите фразу.' };
-    invalidate();
-  }
+  if (!session) voiceStep({ phase: 'text', error: 'Микрофон недоступен. Наберите фразу.' });
 }
 
 /** Прекращает слушать и отключает обработчики: иначе «abort» вызовет onerror и перебьёт следующий шаг. */
@@ -398,8 +412,8 @@ function finishListening(): void {
   cancelVoice();
   const sh = ui.sheet;
   if (sh?.kind !== 'voice' || sh.phase !== 'listening') return;
-  ui.sheet = sh.transcript.trim() ? { ...sh, phase: 'confirm' } : { ...sh, phase: 'text', error: NOTHING_HEARD };
-  invalidate();
+  if (sh.transcript.trim()) voiceStep({ phase: 'confirm' });
+  else voiceStep({ phase: 'text', error: NOTHING_HEARD });
 }
 
 /** Приложение ушло в фон или закрывается: микрофон не должен остаться включённым. */
@@ -410,34 +424,29 @@ export function pauseVoice(): void {
 
 /** «Сказать ещё раз» после ошибки или на экране набора. */
 export function retryVoice(): void {
-  if (ui.sheet?.kind !== 'voice' || !speechSupported()) return;
-  ui.sheet = { ...ui.sheet, phase: 'listening', transcript: '', error: undefined };
-  invalidate();
+  if (ui.sheet?.kind !== 'voice' || !speechSupported() || tooSoon()) return;
+  voiceStep({ phase: 'listening', transcript: '', error: undefined });
   startListening();
 }
 
 export function setVoiceText(text: string): void {
-  if (ui.sheet?.kind !== 'voice') return;
-  ui.sheet = { ...ui.sheet, transcript: text, error: undefined };
-  invalidate();
+  voiceStep({ transcript: text, error: undefined });
 }
 
 export function toConfirm(): void {
-  if (ui.sheet?.kind !== 'voice') return;
+  if (ui.sheet?.kind !== 'voice' || tooSoon()) return;
   if (ui.sheet.phase === 'listening') {
     finishListening();
     return;
   }
   cancelVoice();
-  ui.sheet = { ...ui.sheet, phase: ui.sheet.transcript.trim() ? 'confirm' : 'text' };
-  invalidate();
+  voiceStep({ phase: ui.sheet.transcript.trim() ? 'confirm' : 'text' });
 }
 
 export function toText(): void {
-  if (ui.sheet?.kind !== 'voice') return;
+  if (ui.sheet?.kind !== 'voice' || tooSoon()) return;
   cancelVoice();
-  ui.sheet = { ...ui.sheet, phase: 'text' };
-  invalidate();
+  voiceStep({ phase: 'text' });
 }
 
 export function voiceParsed(): { actions: VoiceAction[]; unknown: string } {
@@ -449,7 +458,7 @@ export function voiceParsed(): { actions: VoiceAction[]; unknown: string } {
 
 export function applyVoice(): void {
   const c = activeChild();
-  if (!c) return;
+  if (!c || tooSoon()) return;
   const { actions } = voiceParsed();
   if (!actions.length) return;
   const depth = undoDepth();

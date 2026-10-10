@@ -12,28 +12,41 @@ export const getState = (): AppState => state;
 /** Куда откладывается то, что лежало в хранилище, но не прочиталось: первая же запись иначе затёрла бы это навсегда. */
 export const UNREADABLE_KEY = `${STORAGE_KEY}:unreadable`;
 
+/** Складывает прежнее содержимое рядом: его можно вернуть, а не потерять при первом же сохранении. */
+function keepUnreadable(raw: string): void {
+  try {
+    localStorage.setItem(UNREADABLE_KEY, raw);
+  } catch {
+    /* места нет — ничего не поделать */
+  }
+}
+
+/** Что-то из записанного приложение выбросило как непонятное (ребёнок с битой датой, запись неизвестного вида). */
+function droppedSomething(parsed: unknown, kept: AppState): boolean {
+  if (typeof parsed !== 'object' || parsed === null) return false;
+  const p = parsed as { children?: unknown; events?: unknown };
+  return (Array.isArray(p.children) && p.children.length > kept.children.length) || (Array.isArray(p.events) && p.events.length > kept.events.length);
+}
+
 export function loadFromStorage(): void {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    const s = sanitizeState(JSON.parse(raw));
+    const parsed: unknown = JSON.parse(raw);
+    const s = sanitizeState(parsed);
     if (s) {
       state = s;
+      // Прочиталось не всё: первая же запись перезапишет хранилище уже без выброшенного, поэтому исходник откладываем.
+      if (droppedSomething(parsed, s)) keepUnreadable(raw);
       return;
     }
   } catch {
     // хранилище недоступно или повреждено — начинаем с чистого листа
   }
   // Данные есть, но приложение их не поняло (повреждены или записаны более новой версией). Начинаем с чистого листа,
-  // но прежнее содержимое оставляем рядом: его можно вернуть, а не потерять при первом же сохранении.
-  if (raw) {
-    try {
-      localStorage.setItem(UNREADABLE_KEY, raw);
-    } catch {
-      /* места нет — ничего не поделать */
-    }
-  }
+  // но прежнее содержимое оставляем рядом.
+  if (raw) keepUnreadable(raw);
 }
 
 export function disablePersistence(): void {

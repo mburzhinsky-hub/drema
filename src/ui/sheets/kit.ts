@@ -163,7 +163,7 @@ export function rowButton(o: { icon: IconName; bg: string; fg: string; title: st
   return html`
     <button type="button" @click=${o.onClick} style="width:100%;min-height:64px;border:0;${o.last ? '' : 'border-bottom:1px solid var(--s-line);'}background:transparent;color:var(--s-fg);padding:0;display:flex;align-items:center;gap:14px;text-align:left;font-family:${SANS}">
       <span style="width:40px;height:40px;border-radius:14px;background:${o.bg};color:${o.fg};display:flex;align-items:center;justify-content:center;flex:none">${icon(o.icon, { size: 22, fo: 0.22 })}</span>
-      <span style="flex:1;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px">${o.title}</span>${o.sub ? html`<span style="font-size:13px;font-weight:500;line-height:18px;color:var(--s-muted)">${o.sub}</span>` : nothing}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px">${o.title}</span>${o.sub ? html`<span style="font-size:13px;font-weight:500;line-height:18px;color:var(--s-muted)">${o.sub}</span>` : nothing}</span>
       ${icon('chevR', { size: 18, stroke: 'currentColor', style: 'opacity:.55' })}
     </button>`;
 }

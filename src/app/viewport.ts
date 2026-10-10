@@ -113,10 +113,13 @@ export function layoutScale(g: ScreenGeometry): number {
   if (vals.some((v) => !Number.isFinite(v) || v <= 0)) return 1;
   const short = Math.min(g.screenWidth, g.screenHeight);
   if (short > PHONE_SHORT_SIDE) return 1;
-  // iOS отдаёт размеры экрана портретными при любом повороте, поэтому ширину окна сравниваем с нужной стороной.
-  const portrait = g.innerHeight >= g.innerWidth;
-  const expected = portrait ? short : Math.max(g.screenWidth, g.screenHeight);
-  const z = g.innerWidth / expected;
+  // iOS отдаёт размеры экрана портретными при любом повороте, поэтому ширину окна сравниваем с обеими сторонами
+  // и берём ту, при которой масштаб ближе к 1. По высоте окна поворот не определить: открытая клавиатура
+  // в части браузеров укорачивает окно, и портрет выглядел бы альбомной ориентацией (приложение сжималось вдвое).
+  const long = Math.max(g.screenWidth, g.screenHeight);
+  const asPortrait = g.innerWidth / short;
+  const asLandscape = g.innerWidth / long;
+  const z = Math.abs(Math.log(asPortrait)) <= Math.abs(Math.log(asLandscape)) ? asPortrait : asLandscape;
   if (Math.abs(z - 1) < ZOOM_TOLERANCE) return 1;
   return Math.round(Math.min(2, Math.max(0.5, z)) * 1000) / 1000;
 }

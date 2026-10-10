@@ -219,7 +219,7 @@ export function homeScreen(d: Derived, t: number, a: HomeActions, viewportH: num
           ${header(d, a)}
           ${topCard}
 
-          <div style="flex:none;margin:14px 20px 0;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:10px">
+          <div class="act-grid" style="flex:none;margin:14px 20px 0;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:10px">
             ${primary}
             <button type="button" @click=${a.openFeed} style="height:96px;box-sizing:border-box;border:0;border-radius:28px;background:#FDE8E2;color:#A8341F;font-family:${SANS};text-align:left;padding:14px 12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;box-shadow:inset 0 1px 0 rgba(255,255,255,0.7)">
               ${icon('bottle', { size: 28 })}

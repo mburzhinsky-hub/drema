@@ -39,7 +39,7 @@ function memberRow(m: Member, i: number, last: boolean, you: string, a: FamilyAc
   return html`
     <button type="button" @click=${() => (owner ? a.openProfile() : a.openMember(m))} style="width:100%;min-height:64px;border:0;${last ? '' : 'border-bottom:1px solid #E9ECF5;'}background:transparent;padding:0;display:flex;align-items:center;gap:14px;text-align:left;font-family:${SANS};color:#14172E">
       <span style="width:40px;height:40px;border-radius:20px;${av};display:flex;align-items:center;justify-content:center;font-family:${SERIF};font-weight:400;font-size:18px;flex:none">${initial(m.name)}</span>
-      <span style="flex:1;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px">${m.name}${owner ? ` (${you})` : ''}</span>${sub}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px">${m.name}${owner ? ` (${you})` : ''}</span>${sub}</span>
       ${owner ? '' : icon('chevR', { size: 18, stroke: '#5A5F7A' })}
     </button>`;
 }

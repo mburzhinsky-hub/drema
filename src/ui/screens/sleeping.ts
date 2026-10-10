@@ -65,7 +65,7 @@ export function sleepingScreen(d: Derived, s: SleepEvent, t: number, a: Sleeping
           </svg>
           <div style="position:absolute;left:0;top:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
             ${icon('moon', { size: 30, stroke: '#FFD66B', fill: '#FFD66B', fo: 0.9, style: 'filter:drop-shadow(0 0 8px rgba(255,214,107,0.6))' })}
-            <div style="margin-top:4px;font-size:15px;font-weight:500;color:#C9C8F5">${d.child.name} ${d.w.sleepsNow}</div>
+            <div style="margin-top:4px;max-width:236px;text-align:center;font-size:15px;font-weight:500;color:#C9C8F5">${d.child.name} ${d.w.sleepsNow}</div>
             <div style="font-family:${SERIF};font-weight:400;font-size:48px;line-height:1.12;letter-spacing:-0.01em;text-shadow:0 0 28px rgba(179,177,255,0.6)">${timeText(fmtTimer(sec))}</div>
             <div style="font-size:14px;font-weight:500;color:#C9C8F5">${d.w.fellAsleep} в ${hm(s.t)}</div>
           </div>

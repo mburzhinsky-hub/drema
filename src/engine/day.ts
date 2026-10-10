@@ -9,9 +9,6 @@ import { words } from './words';
 
 /** Ширина ленты суток в макете, px. */
 export const RIBBON_W = 314;
-const K = RIBBON_W / 1440;
-
-const px = (dayStart: number, t: number): number => Math.round(((t - dayStart) / MIN) * K);
 
 export interface RibbonSegment {
   left: number;
@@ -47,10 +44,13 @@ export function buildRibbon(
   const dayEnd = addDays(dayStart, 1);
   const isToday = now >= dayStart && now < dayEnd;
   const segs: Seg[] = clipSleeps(sleeps, dayStart, dayEnd, now);
+  // Лента занимает всю ширину и в сутки перевода часов (23 или 25 часов), а не вылезает за край или не доходит до него.
+  const k = RIBBON_W / ((dayEnd - dayStart) / MIN);
+  const px = (t: number): number => Math.round(((t - dayStart) / MIN) * k);
 
   const segments: RibbonSegment[] = segs.map((s) => {
-    const left = px(dayStart, s.start);
-    const right = px(dayStart, s.end);
+    const left = px(s.start);
+    const right = px(s.end);
     return {
       left,
       width: Math.max(2, right - left),
@@ -62,12 +62,12 @@ export function buildRibbon(
 
   let next: Ribbon['next'] = null;
   if (isToday && forecast && forecast.predictedAt < dayEnd) {
-    const left = px(dayStart, forecast.predictedAt);
-    const right = Math.min(RIBBON_W, px(dayStart, forecast.predictedAt + expectedNapMin * MIN));
+    const left = px(forecast.predictedAt);
+    const right = Math.min(RIBBON_W, px(forecast.predictedAt + expectedNapMin * MIN));
     next = { left, width: Math.max(4, right - left) };
   }
 
-  const nowLeft = isToday ? Math.floor(((now - dayStart) / MIN) * K) : null;
+  const nowLeft = isToday ? Math.floor(((now - dayStart) / MIN) * k) : null;
 
   const parts: string[] = [];
   const nights = segs.filter((s) => s.kind === 'night' && !s.ongoing);

@@ -19,6 +19,8 @@ const BASE = process.env.BASE_URL ?? 'http://localhost:5173/';
 const OUT = join(process.cwd(), '.visual', 'audit');
 const ONLY = process.env.AUDIT_ONLY;
 const SHOTS = !!process.env.AUDIT_SHOTS;
+/** Кнопка следующего шага «Говорите» не принимает нажатие первые 350 мс (защита от двойного тапа): ждём чуть дольше. */
+const TAP_GUARD = 420;
 
 interface Vp {
   name: string;
@@ -86,6 +88,8 @@ async function newContext(vp: Vp, time = new Date('2026-10-10T13:42:00+03:00')):
 /** Ждём, пока закончатся анимации (шторка выезжает снизу): иначе измерим её на полпути. */
 async function settle(page: Page, ms = 130): Promise<void> {
   await page.waitForTimeout(ms);
+  // Шрифты доехали: на медленной машине замер иначе придёт на запасном шрифте с другой шириной букв.
+  await page.evaluate(() => Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))])).catch(() => undefined);
   await page.evaluate(() => Promise.race([Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))), new Promise((r) => setTimeout(r, 1500))])).catch(() => undefined);
 }
 
@@ -241,6 +245,7 @@ async function runViewport(vp: Vp): Promise<void> {
     await home();
     await btn(page, 'Записать другое').click();
     await btn(page, 'Сказать вслух').click();
+    await page.waitForTimeout(TAP_GUARD);
     await btn(page, 'Набрать вместо голоса').click();
     await page.getByLabel('Фраза').waitFor();
   }, ['#v-text']);
@@ -248,8 +253,10 @@ async function runViewport(vp: Vp): Promise<void> {
     await home();
     await btn(page, 'Записать другое').click();
     await btn(page, 'Сказать вслух').click();
+    await page.waitForTimeout(TAP_GUARD);
     await btn(page, 'Набрать вместо голоса').click();
     await page.getByLabel('Фраза').fill('покормила 120 мл, потом уснула 20 минут назад, подгузник мокрый, температура 37,2');
+    await page.waitForTimeout(TAP_GUARD);
     await btn(page, 'Разобрать').click();
     await page.getByText('Записать?').waitFor();
   });
@@ -257,8 +264,10 @@ async function runViewport(vp: Vp): Promise<void> {
     await home();
     await btn(page, 'Записать другое').click();
     await btn(page, 'Сказать вслух').click();
+    await page.waitForTimeout(TAP_GUARD);
     await btn(page, 'Набрать вместо голоса').click();
     await page.getByLabel('Фраза').fill('сегодня хорошая погода');
+    await page.waitForTimeout(TAP_GUARD);
     await btn(page, 'Разобрать').click();
     await page.getByText('Не поняли').first().waitFor();
   });
@@ -326,16 +335,33 @@ async function runViewport(vp: Vp): Promise<void> {
     await page.locator('.sheet.dark').waitFor();
   }, ['#e-ml']);
 
+  // Главный экран, пока идёт сон: вместо «Уснула» большая кнопка «Проснулась», и сетка из трёх плиток тесна.
+  await state(page, vp, 'экран: главный, пока идёт сон', async () => {
+    await page.goto(`${BASE}?fixture=sleeping`, { waitUntil: 'load' });
+    await page.getByRole('link', { name: 'Назад' }).click();
+    await page.waitForFunction(() => ['', '#/'].includes(location.hash));
+  });
+
   // ───── длинные имена и тексты (как будет у настоящих людей) ─────
   await page.goto(BASE, { waitUntil: 'load' });
   await page.waitForFunction(() => ['', '#/'].includes(location.hash));
   try {
     const longName = 'Александра-Виктория Мельникова'.slice(0, 30);
     const longWord = 'Ааааааааааааааааааааааааааааааа'.slice(0, 30);
+    // самые широкие буквы подряд: реальные имена короче, но запас должен быть
+    const wideWord = 'ЫЩШЖЮФЫЩШЖЮФЫЩШЖЮФЫЩШЖЮФЫЩШЖЮФ'.slice(0, 30);
+    // члены семьи с длинными именами без пробелов (в приложении их добавляет приглашение; здесь пишем прямо в хранилище)
+    await page.evaluate(({ a, b }) => {
+      const st = JSON.parse(localStorage.getItem('drema:v1') || '{}');
+      st.members = [...(st.members || []).filter((m: { id: string }) => !m.id.startsWith('audit')), { id: 'audit1', name: a, role: 'editor' }, { id: 'audit2', name: b, role: 'viewer' }];
+      localStorage.setItem('drema:v1', JSON.stringify(st));
+    }, { a: longWord, b: wideWord });
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => ['', '#/'].includes(location.hash));
     // имя малыша — одно длинное слово без пробелов
     await btn(page, 'Выбрать ребёнка').click();
     await btn(page, /Изменить:/).first().click();
-    await page.locator('#c-name').fill(longWord);
+    await page.locator('#c-name').fill(wideWord);
     await btn(page, 'Сохранить', true).click();
     await settle(page, 300);
     await closeAll(page);

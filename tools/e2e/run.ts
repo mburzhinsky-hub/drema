@@ -87,6 +87,11 @@ async function onboard(page: Page, name = 'Мила', birth = '2026-05-10'): Pro
   await page.waitForFunction(() => ['', '#/', '#/night'].includes(location.hash));
 }
 
+/** Кнопка следующего шага в «Говорите» не принимает нажатие первые 350 мс (защита от двойного тапа): человек так быстро не нажимает, а тест — да. */
+async function afterStep(page: Page): Promise<void> {
+  await page.waitForTimeout(420);
+}
+
 const hash = (page: Page): Promise<string> => page.evaluate(() => location.hash);
 
 /** Переход происходит на ближайшем кадре, поэтому адрес ждём, а не читаем сразу (на медленной машине кадр приходит позже). */
@@ -284,8 +289,10 @@ async function main(): Promise<void> {
     const area = page.getByLabel('Фраза');
     await area.waitFor();
     await area.fill('покормила 120 мл и поменяла подгузник');
+    await afterStep(page);
     await page.getByRole('button', { name: 'Разобрать' }).click();
     await has(page, /Записать всё \(2\)/);
+    await afterStep(page);
     await page.getByRole('button', { name: /Записать всё/ }).click();
     await has(page, /Бутылочка · 120 мл/);
     await has(page, /Мокрый/);
@@ -301,6 +308,7 @@ async function main(): Promise<void> {
     await page.getByRole('button', { name: 'Записать другое' }).click();
     await page.getByRole('button', { name: 'Сказать вслух' }).click();
     await page.getByLabel('Фраза').fill('сегодня хорошая погода');
+    await afterStep(page);
     await page.getByRole('button', { name: 'Разобрать' }).click();
     await has(page, /Не поняли/);
     await ctx.close();
@@ -313,9 +321,11 @@ async function main(): Promise<void> {
     await page.getByRole('button', { name: 'Сказать вслух' }).click();
     await has(page, /Говорите/);
     await has(page, /покормила 90 мл/);
+    await afterStep(page);
     await page.getByRole('button', { name: 'Готово' }).click();
     await has(page, /Записать\?/);
     await has(page, /Кормление · 90 мл/);
+    await afterStep(page);
     await page.getByRole('button', { name: 'Записать', exact: true }).click();
     await has(page, /Бутылочка · 90 мл/);
     assert.deepEqual(errors, []);
@@ -327,8 +337,10 @@ async function main(): Promise<void> {
     await onboard(page);
     await page.getByRole('button', { name: 'Записать другое' }).click();
     await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await afterStep(page);
     await page.getByRole('button', { name: 'Набрать вместо голоса' }).click();
     await page.getByLabel('Фраза').fill('поменяла подгузник');
+    await afterStep(page);
     await page.getByRole('button', { name: 'Разобрать' }).click();
     await has(page, /Подгузник · мокрый/);
     await ctx.close();
@@ -363,6 +375,7 @@ async function main(): Promise<void> {
     assert.deepEqual(await mic(page), { started: 1, live: 1 });
 
     // «Готово» без единого слова: микрофон выключен, подсказка, поле для набора
+    await afterStep(page);
     await page.getByRole('button', { name: 'Готово' }).click();
     await has(page, /Ничего не услышали/);
     await page.getByLabel('Фраза').waitFor({ timeout: 3000 });
@@ -382,6 +395,7 @@ async function main(): Promise<void> {
 
     // «Набрать вместо голоса»
     await openListening(page);
+    await afterStep(page);
     await page.getByRole('button', { name: 'Набрать вместо голоса' }).click();
     await micOff(page, 'перешли к набору');
     await page.getByRole('button', { name: 'Закрыть' }).click();
@@ -393,6 +407,7 @@ async function main(): Promise<void> {
     await page.evaluate(() => (window as unknown as { __finish(): void }).__finish());
     await has(page, /Записать\?/);
     await micOff(page, 'браузер закончил слушать');
+    await afterStep(page);
     await page.getByRole('button', { name: 'Записать', exact: true }).click();
     await has(page, /Бутылочка · 90 мл/);
     await micOff(page, 'запись сделана');
@@ -410,12 +425,14 @@ async function main(): Promise<void> {
     await micOff(page, 'ошибка сети');
     await page.getByLabel('Фраза').waitFor({ timeout: 3000 });
 
+    await afterStep(page);
     await page.getByRole('button', { name: 'Сказать ещё раз' }).click();
     await has(page, /Говорите/);
     assert.deepEqual(await mic(page), { started: 2, live: 1 });
     await lacks(page, /Нет связи/);
     await page.evaluate(() => (window as unknown as { __say(t: string): void }).__say('подгузник мокрый'));
     await has(page, /подгузник мокрый/);
+    await afterStep(page);
     await page.getByRole('button', { name: 'Готово' }).click();
     await has(page, /Подгузник · мокрый/);
     await micOff(page, 'после повторной попытки');
@@ -442,6 +459,66 @@ async function main(): Promise<void> {
     assert.equal((await mic(page)).live, 1);
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
     await micOff(page, 'страница закрывается');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('голос: двойной тап по кнопке шага не перескакивает на следующий шаг, ничего не записывает и не включает микрофон', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    const twice = async (name: string | RegExp): Promise<void> => {
+      const box = (await page.getByRole('button', { name }).boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(80);
+      await page.mouse.click(x, y);
+    };
+    // «Готово» → на этом же месте встаёт «Записать»: второй тап не должен записать
+    await openListening(page);
+    await page.evaluate(() => (window as unknown as { __say(t: string): void }).__say('покормила 90 мл'));
+    await has(page, /покормила 90 мл/);
+    await afterStep(page);
+    await twice('Готово');
+    await has(page, /Записать\?/);
+    await page.waitForTimeout(600);
+    await has(page, /Записать\?/);
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+    await lacks(page, /Бутылочка · 90 мл/);
+
+    // «Набрать вместо голоса» → на этом же месте встаёт «Сказать ещё раз»: второй тап не должен включить микрофон
+    await openListening(page);
+    await afterStep(page);
+    await twice('Набрать вместо голоса');
+    await page.getByLabel('Фраза').waitFor({ timeout: 3000 });
+    await page.waitForTimeout(600);
+    await micOff(page, 'двойной тап по «Набрать вместо голоса»');
+    assert.equal((await mic(page)).started, 2, 'микрофон включался только при открытии шторки, а не от второго тапа');
+
+    // «Разобрать» → «Записать всё»/«Записать»: то же самое
+    await page.getByLabel('Фраза').fill('покормила 120 мл');
+    await afterStep(page);
+    await twice('Разобрать');
+    await has(page, /Записать\?/);
+    await page.waitForTimeout(600);
+    await has(page, /Записать\?/);
+    await lacks(page, /Бутылочка · 120 мл/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('микрофон: другая шторка поверх «Говорите» (например, «Изменить» в уведомлении) его выключает', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await page.getByRole('button', { name: /Уснул/ }).first().click();
+    await expectHash(page, '#/sleeping');
+    await page.getByRole('button', { name: /Проснул/ }).first().click();
+    await has(page, /Изменить/);
+    await openListening(page);
+    assert.equal((await mic(page)).live, 1);
+    await page.getByRole('button', { name: 'Изменить', exact: true }).click();
+    await has(page, /Время сна/);
+    await micOff(page, 'поверх открылась другая шторка');
     assert.deepEqual(errors, []);
     await ctx.close();
   });
@@ -1033,6 +1110,11 @@ async function main(): Promise<void> {
     // потом пришли настоящие числа: клавиатура 300 px
     await page.evaluate(() => (window as unknown as { __vv(h: number, t: number): void }).__vv(844 - 300, 0));
     await page.waitForFunction(() => Math.round(document.getElementById('app')!.getBoundingClientRect().height) === 544, null, { timeout: 3000 });
+    // шторка ещё может ехать вверх (анимация): ждём, пока она встанет, а не читаем размеры на лету
+    await page.waitForFunction(() => {
+      const sh = document.querySelector('.sheet');
+      return !!sh && Math.abs(sh.getBoundingClientRect().bottom - 544) <= 1 && document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity);
+    }, null, { timeout: 4000 }).catch(() => undefined);
     const g = await geometry(page);
     assert.ok(g.sheet && Math.abs(g.sheet.bottom - 544) <= 1, `шторка по измеренной высоте: ${JSON.stringify(g.sheet)}`);
     assert.deepEqual(errors, []);

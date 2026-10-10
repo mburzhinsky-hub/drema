@@ -161,6 +161,18 @@ button:disabled { cursor: default; }
 /* Ночью шторки тёмные, чтобы не слепить. */
 /* Клавиатура на невысоком экране: закреплённый низ шторки съедает всё место, и поле почти не видно.
    Тогда шторка прокручивается целиком: шапка с названием и кнопкой «Закрыть» остаётся наверху, кнопки идут за содержимым. */
+/*
+ * Три плитки действий на главном (уснула/проснулась · еда · подгузник) в макете рассчитаны на ширину от 346 px.
+ * Уже окно (iPhone SE и подобные) — плитки не помещались и выходили за край: ужимаем отступы и шрифт.
+ * Правила с !important, потому что вёрстка экранов задана стилями прямо в разметке.
+ */
+@media (max-width: 345px) {
+  .act-grid { grid-template-columns: auto auto auto !important; gap: 8px !important; }
+  .act-grid > button { padding-left: 10px !important; padding-right: 10px !important; }
+  .act-grid > button > span { font-size: 13px !important; }
+  .act-grid > button:first-child > span { font-size: 16px !important; }
+}
+
 @media (max-height: 760px) {
   html.kb .sheet { overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; }
   html.kb .sheet > .scroll { flex: none !important; overflow: visible; }

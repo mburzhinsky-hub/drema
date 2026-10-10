@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addDays, atMinutes, hm, isoDate, latestAtOrBefore, startOfDay } from '../src/engine/time';
 import { extractTime, parseVoice } from '../src/engine/voice';
+import { RIBBON_W, buildRibbon } from '../src/engine/day';
+import type { SleepEvent } from '../src/engine/model';
 
 /**
  * Перевод часов: в Европе сутки 26 октября 2026 длятся 25 часов, 29 марта — 23. Приложение русскоязычное, им пользуются
@@ -60,6 +62,42 @@ describe('«вчера» после перевода часов', () => {
   });
 });
 
+describe('«вчера» в любой час вокруг обоих переводов часов', () => {
+  /** Календарная дата на n дней раньше, без участия часов: сравниваем с тем, что насчитал код. */
+  const calendarBack = (iso: string, n: number): string => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+
+  it('каждый час с 24 по 27 октября и с 28 марта по 1 апреля «вчера в 14:30» — предыдущая календарная дата', () => {
+    const spans: Array<[string, number]> = [['2026-10-24T00:00:00Z', 96], ['2026-03-27T23:00:00Z', 120]];
+    let checked = 0;
+    for (const [from, hours] of spans) {
+      for (let h = 0; h < hours; h++) {
+        const now = new Date(from).getTime() + h * 3_600_000;
+        const want = `${calendarBack(isoDate(now), 1)} 14:30`;
+        expect(stamp(extractTime('покормила вчера в 14:30', now).t), `сейчас ${stamp(now)}`).toBe(want);
+        checked++;
+      }
+    }
+    expect(checked).toBe(216);
+  });
+
+  it('addDays шагает ровно на календарные сутки в обе стороны через оба перевода', () => {
+    for (const start of ['2026-03-26T12:00:00', '2026-10-23T12:00:00']) {
+      let t = startOfDay(local(start));
+      for (let i = 0; i < 8; i++) {
+        const next = addDays(t, 1);
+        expect(hm(next), `${stamp(t)} + 1 сутки`).toBe('00:00');
+        expect(isoDate(next)).toBe(calendarBack(isoDate(t), -1));
+        expect(addDays(next, -1)).toBe(t);
+        t = next;
+      }
+    }
+  });
+});
+
 describe('latestAtOrBefore: «чч:мм» не позже «сейчас»', () => {
   it('в сутки перевода берёт вчерашнее время по календарю', () => {
     const now = local('2026-10-25T10:00:00');
@@ -83,5 +121,30 @@ describe('atMinutes и addDays держат местное время', () => {
   it('сутки перевода: «минус сутки» от 00:50 25 октября — вчера в 00:50', () => {
     expect(stamp(addDays(local('2026-10-25T00:50:00'), -1))).toBe('2026-10-24 00:50');
     expect(stamp(atMinutes(addDays(startOfDay(local('2026-10-25T10:00:00')), -1), 23 * 60 + 50))).toBe('2026-10-24 23:50');
+  });
+});
+
+describe('лента суток в сутки перевода часов', () => {
+  const night = (from: string, to: string): SleepEvent =>
+    ({ id: 'n', childId: 'c1', type: 'sleep', t: local(from), end: local(to), updatedAt: 0 }) as unknown as SleepEvent;
+
+  it('занимает всю ширину и в 25-часовые, и в 23-часовые сутки: ничего не вылезает за край', () => {
+    for (const day of ['2026-10-25', '2026-03-29', '2026-10-10']) {
+      const start = startOfDay(local(`${day}T12:00:00`));
+      // сон на всё сутки: от начала до конца
+      const whole = night(`${day}T00:00:00`, `${isoDate(addDays(start, 1))}T00:00:00`);
+      const r = buildRibbon([whole], start, addDays(start, 1) + 1, null, 60);
+      expect(r.segments).toHaveLength(1);
+      expect(r.segments[0].left, day).toBe(0);
+      expect(r.segments[0].left + r.segments[0].width, day).toBe(RIBBON_W);
+    }
+  });
+
+  it('позиция «сейчас» в конце 25-часовых суток не выходит за ленту', () => {
+    const start = startOfDay(local('2026-10-25T12:00:00'));
+    const lastMinute = addDays(start, 1) - 60_000;
+    const r = buildRibbon([], start, lastMinute, null, 60);
+    expect(r.nowLeft).toBeLessThanOrEqual(RIBBON_W);
+    expect(r.nowLeft).toBeGreaterThan(RIBBON_W - 3);
   });
 });

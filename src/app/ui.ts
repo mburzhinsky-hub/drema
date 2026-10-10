@@ -147,12 +147,15 @@ export function hideToast(): void {
   invalidate();
 }
 
+const closeHooks: Array<(s: Sheet) => void> = [];
+
+/** Открывает шторку; ту, что была открыта до неё, закрывает по-настоящему (останавливает микрофон и т. п.). */
 export function openSheet(s: Sheet): void {
+  const prev = ui.sheet;
   ui.sheet = s;
+  if (prev && prev !== s) for (const h of closeHooks) h(prev);
   invalidate();
 }
-
-const closeHooks: Array<(s: Sheet) => void> = [];
 
 /** Что сделать при закрытии шторки (например, остановить микрофон). */
 export function onSheetClose(fn: (s: Sheet) => void): void {
