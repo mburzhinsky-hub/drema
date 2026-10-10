@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Baseline, KEYBOARD_MIN_PX, appInsets, baselineOf, isTextField, startViewport } from '../src/app/viewport';
+import { Baseline, KEYBOARD_MIN_PX, KEYBOARD_SHARE, appInsets, baselineOf, canEstimate, estimatedInsets, isTextField, startViewport } from '../src/app/viewport';
 
 const NONE = { top: 0, bottom: 0, keyboard: false };
 
@@ -69,12 +69,34 @@ describe('appInsets: где стоит приложение', () => {
   });
 });
 
+describe('оценка клавиатуры, когда браузер о ней молчит', () => {
+  it('доля экрана: на 844 px клавиатура с полосой «готово» занимает около 388', () => {
+    expect(estimatedInsets(844)).toEqual({ top: 0, bottom: Math.round(844 * KEYBOARD_SHARE), keyboard: true });
+    expect(Math.round(844 * KEYBOARD_SHARE)).toBeGreaterThanOrEqual(380);
+    expect(Math.round(844 * KEYBOARD_SHARE)).toBeLessThanOrEqual(395);
+  });
+
+  it('в масштабе страницы 85 % (окно 994 px) оценка растёт вместе с окном', () => {
+    expect(estimatedInsets(994).bottom).toBe(457);
+  });
+
+  const media = (matches: Record<string, boolean>): Window => ({ matchMedia: (q: string) => ({ matches: matches[q] ?? false }) }) as unknown as Window;
+
+  it('оценка только на телефоне с сенсорным экраном', () => {
+    expect(canEstimate(media({ '(pointer: coarse)': true, '(max-width: 559px)': true }))).toBe(true);
+    expect(canEstimate(media({ '(pointer: coarse)': false, '(max-width: 559px)': true }))).toBe(false);
+    expect(canEstimate(media({ '(pointer: coarse)': true, '(max-width: 559px)': false }))).toBe(false);
+    expect(canEstimate({} as Window)).toBe(false);
+  });
+});
+
 // В среде тестов нет DOM: подставляем минимальные классы, чтобы проверить различение полей.
 class FakeInput {
   constructor(
     public type: string,
     public readOnly = false,
   ) {}
+  scrollIntoView(): void {}
 }
 class FakeTextarea {}
 
@@ -111,7 +133,7 @@ describe('isTextField: у каких полей есть клавиатура', 
 
 type Handler = (e?: unknown) => void;
 
-function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean } = {}) {
+function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean; phone?: boolean } = {}) {
   const layout = opts.layout ?? 844;
   const classes = new Set<string>();
   const style: Record<string, string> = {};
@@ -134,6 +156,7 @@ function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean } = 
       win.scrollX = 0;
       win.scrollY = 0;
     }),
+    matchMedia: (q: string) => ({ matches: opts.phone === true && (q === '(pointer: coarse)' || q === '(max-width: 559px)') }),
     requestAnimationFrame: (cb: () => void) => frames.push(cb),
     setTimeout: (cb: () => void) => timers.push(cb),
     addEventListener: (k: string, h: Handler) => reg(listeners, k, h),
@@ -153,6 +176,11 @@ function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean } = 
   const flush = (): void => {
     while (frames.length) frames.shift()!();
   };
+  /** Прошла пауза после фокуса (setTimeout): запускаем отложенное. */
+  const runTimers = (): void => {
+    while (timers.length) timers.shift()!();
+    flush();
+  };
   /** Браузер сообщил новую видимую область. */
   const resize = (height: number, offsetTop = 0): void => {
     vv.height = height;
@@ -160,7 +188,7 @@ function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean } = 
     fire(vvListeners, 'resize');
     flush();
   };
-  return { win, doc, vv, vvListeners, listeners, classes, style, scrollingElement, flush, timers, fire, resize };
+  return { win, doc, vv, vvListeners, listeners, classes, style, scrollingElement, flush, timers, fire, resize, runTimers };
 }
 
 describe('startViewport: привязка к видимой области', () => {
@@ -269,6 +297,67 @@ describe('startViewport: привязка к видимой области', () 
     e.resize(390);
     expect(e.classes.has('kb')).toBe(false);
     expect(e.style['--app-bottom']).toBe('0px');
+  });
+
+  it('iOS молчит о клавиатуре (приложение «с экрана Домой»): после паузы высота оценивается, шторка выше клавиатуры', () => {
+    const e = fakeEnv({ phone: true });
+    start(e);
+    focusField(e);
+    expect(e.style['--app-bottom']).toBe('0px'); // пока рано: вдруг браузер сообщит сам
+    e.runTimers();
+    expect(e.classes.has('kb')).toBe(true);
+    expect(e.style['--app-bottom']).toBe(`${Math.round(844 * KEYBOARD_SHARE)}px`);
+  });
+
+  it('оценка не включается без сенсорного экрана (на компьютере поле в фокусе — не клавиатура)', () => {
+    const e = fakeEnv({ phone: false });
+    start(e);
+    focusField(e);
+    e.runTimers();
+    expect(e.classes.has('kb')).toBe(false);
+    expect(e.style['--app-bottom']).toBe('0px');
+  });
+
+  it('если браузер потом сообщил реальную высоту — берётся она, а не оценка', () => {
+    const e = fakeEnv({ phone: true });
+    start(e);
+    focusField(e);
+    e.runTimers();
+    e.resize(500);
+    expect(e.style['--app-bottom']).toBe('344px');
+  });
+
+  it('поле потеряло фокус — оценка снимается, приложение снова на всё окно', () => {
+    const e = fakeEnv({ phone: true });
+    start(e);
+    focusField(e);
+    e.runTimers();
+    blur(e);
+    e.runTimers();
+    expect(e.classes.has('kb')).toBe(false);
+    expect(e.style['--app-bottom']).toBe('0px');
+  });
+
+  it('переход между полями («вперёд» на панели клавиатуры) оценку не сбрасывает', () => {
+    const e = fakeEnv({ phone: true });
+    start(e);
+    focusField(e);
+    e.runTimers();
+    e.fire(e.listeners, 'focusout');
+    focusField(e); // фокус сразу перешёл на другое поле
+    e.runTimers();
+    expect(e.classes.has('kb')).toBe(true);
+  });
+
+  it('прокрутка поля в видимую часть делается после оценки, а не до неё', () => {
+    const e = fakeEnv({ phone: true });
+    start(e);
+    const order: string[] = [];
+    const field = Object.assign(new FakeInput('text'), { scrollIntoView: () => order.push(`scroll(bottom=${e.style['--app-bottom']})`) });
+    e.doc.activeElement = field;
+    e.fire(e.listeners, 'focusin', { target: field });
+    e.runTimers();
+    expect(order).toEqual([`scroll(bottom=${Math.round(844 * KEYBOARD_SHARE)}px)`]);
   });
 
   it('страницу, подкрученную браузером, возвращает на место', () => {

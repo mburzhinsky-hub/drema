@@ -10,6 +10,10 @@
  * меньше окна на высоту строки состояния даже без клавиатуры (на скриншотах это пустая полоса внизу).
  * Поэтому пока поле ввода не в фокусе, запоминаем «как выглядит экран без клавиатуры» (`Baseline`)
  * и считаем только отклонение от него.
+ *
+ * Бывает и хуже: в приложении с экрана «Домой» iOS может вообще не сообщить, что клавиатура выехала (размеры не меняются,
+ * страница не двигается, клавиатура просто накрывает низ). Тогда, если поле в фокусе, а измерить нечего, высота клавиатуры
+ * оценивается долей экрана (`KEYBOARD_SHARE`): шторка всё равно встаёт выше клавиатуры, и поле не прячется под ней.
  */
 
 /** Видимая область, как её отдаёт браузер (`visualViewport`). */
@@ -40,6 +44,13 @@ export interface Insets {
 
 /** Клавиатура считается открытой, если видимая область стала ниже обычной больше чем на столько, px. */
 export const KEYBOARD_MIN_PX = 120;
+/**
+ * Какую часть высоты занимает клавиатура iPhone вместе с полосой «вверх/вниз/готово» (по скриншоту с iPhone 14: 386 из 844 pt).
+ * Используется, только когда браузер не сообщил реальную высоту.
+ */
+export const KEYBOARD_SHARE = 0.46;
+/** Через сколько после фокуса, мс, считать, что браузер о клавиатуре не сообщит, и перейти к оценке. */
+export const ESTIMATE_AFTER_MS = 350;
 /** Допуск масштаба: при увеличенной щипком странице приложение не трогаем. */
 const SCALE_EPS = 0.02;
 
@@ -65,6 +76,17 @@ export function appInsets(layoutHeight: number, vv: VisibleArea | null, base: Ba
   };
 }
 
+/** Оценка отступов, когда клавиатура точно есть (поле в фокусе), а браузер её высоту не сообщил. */
+export function estimatedInsets(layoutHeight: number): Insets {
+  return { top: 0, bottom: Math.round(layoutHeight * KEYBOARD_SHARE), keyboard: true };
+}
+
+/** Оценка нужна только на телефоне с сенсорным экраном: на компьютере поле в фокусе не значит «клавиатура на экране». */
+export function canEstimate(win: Window): boolean {
+  if (typeof win.matchMedia !== 'function') return false;
+  return win.matchMedia('(pointer: coarse)').matches && win.matchMedia('(max-width: 559px)').matches;
+}
+
 /** Какие поля вводят текст: у кнопок, флажков и файлов клавиатуры нет. */
 const TEXTUAL = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', 'datetime-local', '']);
 
@@ -81,14 +103,22 @@ export function startViewport(win: Window = window, doc: Document = document): (
   const layoutHeight = (): number => html.clientHeight || win.innerHeight;
   const area = (): VisibleArea | null => (vv ? { height: vv.height, offsetTop: vv.offsetTop, scale: vv.scale } : null);
   let base = baselineOf(layoutHeight(), area());
+  /** Браузер молчит о клавиатуре, а поле в фокусе дольше ESTIMATE_AFTER_MS: считаем высоту клавиатуры по доле экрана. */
+  let estimating = false;
 
   const apply = (): void => {
     frame = 0;
     const lh = layoutHeight();
     const now = area();
+    const typing = isTextField(doc.activeElement);
     // Пока поле ввода не в фокусе, клавиатуры нет: это и есть «обычный» вид экрана (поворот, адресная строка, строка состояния).
-    if (!isTextField(doc.activeElement)) base = baselineOf(lh, now);
-    const ins = appInsets(lh, now, base);
+    if (!typing) {
+      base = baselineOf(lh, now);
+      estimating = false;
+    }
+    // Измеренное важнее оценки: как только браузер сообщил реальные числа, берём их.
+    const measured = appInsets(lh, now, base);
+    const ins = !measured.keyboard && estimating ? estimatedInsets(lh) : measured;
     html.style.setProperty('--app-top', `${ins.top}px`);
     html.style.setProperty('--app-bottom', `${ins.bottom}px`);
     html.classList.toggle('kb', ins.keyboard);
@@ -109,9 +139,10 @@ export function startViewport(win: Window = window, doc: Document = document): (
     schedule();
     if (isTextField(e.target as Element)) {
       win.setTimeout(() => {
+        if (isTextField(doc.activeElement) && canEstimate(win)) estimating = true;
         apply();
         reveal();
-      }, 350);
+      }, ESTIMATE_AFTER_MS);
     }
   };
 

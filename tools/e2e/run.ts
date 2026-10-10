@@ -51,9 +51,11 @@ const FAKE_VISUAL_VIEWPORT = (idleHeight: number | null): string => `
     };
   })();`;
 
-async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number } } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
+async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number }; touch?: boolean } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext({
     viewport: opts.viewport ?? { width: 390, height: 844 },
+    // Сенсорный экран: нужен, чтобы сработала оценка высоты клавиатуры (на компьютере поле в фокусе — не клавиатура).
+    ...(opts.touch ? { isMobile: true, hasTouch: true } : {}),
     locale: 'ru-RU',
     timezoneId: 'Europe/Moscow',
     reducedMotion: 'reduce',
@@ -805,6 +807,52 @@ async function main(): Promise<void> {
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     assert.match(copied, /Окно страницы: 390 × 844/);
     assert.match(copied, /Масштаб страницы: 100 %/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+
+  await test('iPhone: iOS не сообщает о клавиатуре (как в приложении с экрана «Домой») — шторка и поле всё равно выше клавиатуры', async () => {
+    // Скриншот с телефона: клавиатура накрыла шторку, размеры страницы не изменились. visualViewport остаётся прежним.
+    const { ctx, page, errors } = await fresh({ keyboard: true, touch: true });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Еда' }).click();
+    await page.getByRole('dialog').waitFor();
+    assert.equal((await geometry(page)).kb, false);
+
+    await page.locator('#e-ml').focus();
+    await page.waitForFunction(() => document.documentElement.classList.contains('kb'), null, { timeout: 3000 });
+    await page.waitForTimeout(150);
+    const g = await geometry(page);
+    const keyboardTop = 844 - Math.round(844 * 0.46);
+    assert.ok(g.sheet && Math.abs(g.sheet.bottom - keyboardTop) <= 2, `шторка заканчивается над клавиатурой (${keyboardTop}): ${JSON.stringify(g.sheet)}`);
+    assert.ok(g.sheet.top >= 0, 'шторка не уходит за верх окна');
+    assert.ok(g.field && g.field.top >= g.sheet.top - 1 && g.field.bottom <= keyboardTop, `поле выше клавиатуры: ${JSON.stringify(g.field)}`);
+    assert.equal(g.navHidden, true);
+    assert.equal(g.pageScrollable, false);
+    assert.equal(g.scrollY, 0);
+
+    // «Готово»: поле потеряло фокус — всё возвращается.
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+    await page.waitForFunction(() => !document.documentElement.classList.contains('kb'), null, { timeout: 3000 });
+    const after = await geometry(page);
+    assert.equal(after.app.bottom, 844);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('iPhone: если браузер сообщил реальную высоту клавиатуры, оценка не мешает', async () => {
+    const { ctx, page, errors } = await fresh({ keyboard: true, touch: true });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Еда' }).click();
+    await page.getByRole('dialog').waitFor();
+    await page.locator('#e-ml').focus();
+    await page.waitForFunction(() => document.documentElement.classList.contains('kb'), null, { timeout: 3000 });
+    // потом пришли настоящие числа: клавиатура 300 px
+    await page.evaluate(() => (window as unknown as { __vv(h: number, t: number): void }).__vv(844 - 300, 0));
+    await page.waitForFunction(() => Math.round(document.getElementById('app')!.getBoundingClientRect().height) === 544, null, { timeout: 3000 });
+    const g = await geometry(page);
+    assert.ok(g.sheet && Math.abs(g.sheet.bottom - 544) <= 1, `шторка по измеренной высоте: ${JSON.stringify(g.sheet)}`);
     assert.deepEqual(errors, []);
     await ctx.close();
   });

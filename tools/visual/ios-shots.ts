@@ -76,4 +76,18 @@ for (const fx of ['splash', 'home', 'night']) {
   console.log(`снимок zoom85-${fx}`);
 }
 
+// iOS молчит о клавиатуре: размеры не меняются, она просто накрывает низ. Высота оценивается по доле экрана.
+const silent = await browser.newContext({ viewport: { width: 459, height: 994 }, deviceScaleFactor: 2.55, isMobile: true, hasTouch: true, locale: 'ru-RU', timezoneId: 'Europe/Moscow', reducedMotion: 'reduce' });
+const sp = await silent.newPage();
+await sp.addInitScript('window.__name = window.__name || ((f) => f);');
+await sp.clock.install({ time: new Date('2026-10-10T13:42:00+03:00') });
+await sp.goto(`${BASE}?fixture=home`, { waitUntil: 'load' });
+await sp.addStyleTag({ content: SAFE });
+await sp.getByRole('button', { name: 'Еда' }).click();
+await sp.locator('#e-ml').focus();
+await sp.waitForTimeout(700);
+await sp.evaluate(KEYBOARD(Math.round(994 * 0.46)));
+await sp.screenshot({ path: join(OUT, 'silent-feed.png') });
+console.log('снимок silent-feed');
+
 await browser.close();
