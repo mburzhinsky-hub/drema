@@ -206,6 +206,8 @@ function draw(): void {
   const d = derive(s, t);
 
   let route = parseHash(location.hash);
+  const asked = route.name;
+  const shown = lastRouteName;
   if (!fixture) {
     for (let i = 0; i < 3; i++) {
       const to = guard(route, s, d, t);
@@ -224,6 +226,11 @@ function draw(): void {
     theme?.setAttribute('content', THEME[route.name] ?? '#F1F3FB');
     document.documentElement.style.setProperty('--page-bg', PAGE_BG[route.name] ?? '#F1F3FB');
   }
+
+  // Шторка принадлежит экрану, на котором открылась. Если адрес сменили снаружи (свайп «назад», ссылка), шторку закрываем
+  // (вместе с ней выключается микрофон), а не оставляем висеть над чужим экраном. Переход самого приложения
+  // (ночной режим, охранник маршрутов) шторку не трогает: он сразу ставит новый адрес, и в следующий раз «запрошенный» экран уже совпадает с показанным.
+  if (ui.sheet && lastSheet && shown && asked !== shown) closeSheet();
 
   const sheet = ui.sheet;
   const tpl = html`
@@ -273,7 +280,10 @@ export function start(opts: StartOptions): void {
   window.addEventListener('resize', invalidate);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') invalidate();
+    else F.pauseVoice();
   });
+  // Приложение закрывается или уходит в фон: микрофон не должен остаться включённым.
+  window.addEventListener('pagehide', F.pauseVoice);
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && ui.sheet) closeSheet();
   });

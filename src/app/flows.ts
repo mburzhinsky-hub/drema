@@ -22,6 +22,7 @@ import {
 import { getState } from '../store/store';
 import { EntrySheet, SleepEditSheet, closeSheet, hideToast, invalidate, onSheetClose, openSheet, showToast, ui } from './ui';
 import { go } from './router';
+import { NOTHING_HEARD, SpeechSession, speechErrorMessage, speechSupported, startSpeech } from './speech';
 import { DiaperKind } from '../engine/model';
 
 // ───────────────────────── сон ─────────────────────────
@@ -335,27 +336,10 @@ export function deleteEntry(): void {
 
 // ───────────────────────── голос ─────────────────────────
 
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  maxAlternatives: number;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-}
+/** Текущий сеанс распознавания. Пока он есть, микрофон включён; любой выход из «Говорите» его выключает. */
+let session: SpeechSession | null = null;
 
-type SRCtor = new () => SpeechRecognitionLike;
-
-let rec: SpeechRecognitionLike | null = null;
-
-export function speechSupported(): boolean {
-  const w = window as unknown as { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
-  return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
-}
+export { speechSupported };
 
 export function openVoice(): void {
   if (!speechSupported()) {
@@ -367,68 +351,57 @@ export function openVoice(): void {
 }
 
 function startListening(): void {
-  const w = window as unknown as { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
-  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-  if (!Ctor) return;
-  try {
-    rec = new Ctor();
-    rec.lang = 'ru-RU';
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      let text = '';
-      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript + ' ';
-      if (ui.sheet?.kind === 'voice') {
-        ui.sheet = { ...ui.sheet, transcript: text.trim() };
-        invalidate();
-      }
-    };
-    rec.onerror = (e) => {
-      if (ui.sheet?.kind !== 'voice') return;
-      const msg =
-        e.error === 'not-allowed' || e.error === 'service-not-allowed'
-          ? 'Нет доступа к микрофону. Разрешите его в настройках браузера или наберите фразу.'
-          : e.error === 'no-speech'
-            ? 'Ничего не услышали. Попробуйте ещё раз или наберите фразу.'
-            : 'Не получилось распознать речь. Наберите фразу.';
-      ui.sheet = { ...ui.sheet, phase: 'text', error: msg };
+  cancelVoice();
+  session = startSpeech({
+    text: (transcript) => {
+      if (ui.sheet?.kind !== 'voice' || ui.sheet.phase !== 'listening') return;
+      ui.sheet = { ...ui.sheet, transcript };
       invalidate();
-    };
-    rec.onend = () => {
-      if (ui.sheet?.kind === 'voice' && ui.sheet.phase === 'listening') {
-        ui.sheet = { ...ui.sheet, phase: ui.sheet.transcript ? 'confirm' : 'text' };
-        invalidate();
-      }
-    };
-    rec.start();
-  } catch {
-    if (ui.sheet?.kind === 'voice') ui.sheet = { ...ui.sheet, phase: 'text', error: 'Микрофон недоступен. Наберите фразу.' };
+    },
+    end: finishListening,
+    error: (code) => {
+      session = null;
+      if (ui.sheet?.kind !== 'voice') return;
+      ui.sheet = { ...ui.sheet, phase: 'text', error: speechErrorMessage(code) };
+      invalidate();
+    },
+  });
+  if (!session && ui.sheet?.kind === 'voice') {
+    ui.sheet = { ...ui.sheet, phase: 'text', error: 'Микрофон недоступен. Наберите фразу.' };
     invalidate();
-  }
-}
-
-export function stopListening(): void {
-  try {
-    rec?.stop();
-  } catch {
-    /* уже остановлено */
   }
 }
 
 /** Прекращает слушать и отключает обработчики: иначе «abort» вызовет onerror и перебьёт следующий шаг. */
 export function cancelVoice(): void {
-  if (rec) {
-    rec.onresult = null;
-    rec.onerror = null;
-    rec.onend = null;
-    try {
-      rec.abort();
-    } catch {
-      /* уже остановлено */
-    }
-  }
-  rec = null;
+  session?.cancel();
+  session = null;
+}
+
+/**
+ * Слушание закончилось (пауза в речи, «Готово», тайм-аут, уход в фон): микрофон выключаем,
+ * услышанное — на проверку, а если не услышали ничего — на набор с подсказкой.
+ */
+function finishListening(): void {
+  cancelVoice();
+  const sh = ui.sheet;
+  if (sh?.kind !== 'voice' || sh.phase !== 'listening') return;
+  ui.sheet = sh.transcript.trim() ? { ...sh, phase: 'confirm' } : { ...sh, phase: 'text', error: NOTHING_HEARD };
+  invalidate();
+}
+
+/** Приложение ушло в фон или закрывается: микрофон не должен остаться включённым. */
+export function pauseVoice(): void {
+  if (ui.sheet?.kind === 'voice' && ui.sheet.phase === 'listening') finishListening();
+  else cancelVoice();
+}
+
+/** «Сказать ещё раз» после ошибки или на экране набора. */
+export function retryVoice(): void {
+  if (ui.sheet?.kind !== 'voice' || !speechSupported()) return;
+  ui.sheet = { ...ui.sheet, phase: 'listening', transcript: '', error: undefined };
+  invalidate();
+  startListening();
 }
 
 export function setVoiceText(text: string): void {
@@ -439,6 +412,10 @@ export function setVoiceText(text: string): void {
 
 export function toConfirm(): void {
   if (ui.sheet?.kind !== 'voice') return;
+  if (ui.sheet.phase === 'listening') {
+    finishListening();
+    return;
+  }
   cancelVoice();
   ui.sheet = { ...ui.sheet, phase: ui.sheet.transcript.trim() ? 'confirm' : 'text' };
   invalidate();

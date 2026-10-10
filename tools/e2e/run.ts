@@ -15,7 +15,7 @@ let browser: Browser;
 const results: Array<{ name: string; ok: boolean; err?: string }> = [];
 
 /** Какое распознавание речи видит страница: нет совсем, исправное (подставной распознаватель) или без доступа к микрофону. */
-type Speech = 'none' | 'fake' | 'denied';
+type Speech = 'none' | 'fake' | 'denied' | 'track';
 
 const SPEECH_SCRIPT: Record<Speech, string> = {
   none: `for (const k of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, k, { value: undefined, configurable: true, writable: true });`,
@@ -26,6 +26,23 @@ const SPEECH_SCRIPT: Record<Speech, string> = {
       abort() {}
     }
     window.webkitSpeechRecognition = FakeSR; window.SpeechRecognition = FakeSR;`,
+  // Распознаватель с учётом: window.__mic.live — сколько микрофонов сейчас включено. Ошибка его сама не выключает (худший случай):
+  // выключить должно приложение. __say / __fail / __finish — «человек сказал», «сервис ответил ошибкой», «браузер закончил слушать».
+  track: `
+    window.__mic = { started: 0, live: 0 };
+    window.__sr = [];
+    class TrackSR {
+      constructor() { this.on = false; window.__sr.push(this); }
+      start() { this.on = true; window.__mic.started++; window.__mic.live++; }
+      _off() { if (this.on) { this.on = false; window.__mic.live--; } }
+      stop() { this._off(); }
+      abort() { this._off(); }
+    }
+    const cur = () => window.__sr[window.__sr.length - 1];
+    window.__say = (text) => { const r = cur(); r.onresult && r.onresult({ results: [Object.assign([{ transcript: text }], { isFinal: false })] }); };
+    window.__fail = (code) => { const r = cur(); r.onerror && r.onerror({ error: code }); };
+    window.__finish = () => { const r = cur(); r._off(); r.onend && r.onend(); };
+    window.webkitSpeechRecognition = TrackSR; window.SpeechRecognition = TrackSR;`,
   denied: `
     class DeniedSR {
       start() { setTimeout(() => this.onerror && this.onerror({ error: 'not-allowed' }), 60); }
@@ -339,6 +356,149 @@ async function main(): Promise<void> {
     await page.getByRole('button', { name: 'Сказать вслух' }).click();
     await has(page, /Нет доступа к микрофону/);
     await page.getByLabel('Фраза').waitFor({ timeout: 4000 });
+    await ctx.close();
+  });
+
+  // ───── микрофон: он должен выключаться при любом выходе из «Говорите» ─────
+  const openListening = async (page: Page): Promise<void> => {
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await has(page, /Говорите/);
+  };
+  const mic = (page: Page): Promise<{ started: number; live: number }> => page.evaluate(() => (window as unknown as { __mic: { started: number; live: number } }).__mic);
+  const micOff = async (page: Page, why: string): Promise<void> => {
+    await page.waitForTimeout(100);
+    assert.equal((await mic(page)).live, 0, `микрофон остался включённым: ${why}`);
+  };
+
+  await test('микрофон: включается один раз, гаснет при «Готово», ✕, Esc, «Набрать вместо голоса» и когда браузер закончил слушать', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await openListening(page);
+    assert.deepEqual(await mic(page), { started: 1, live: 1 });
+
+    // «Готово» без единого слова: микрофон выключен, подсказка, поле для набора
+    await page.getByRole('button', { name: 'Готово' }).click();
+    await has(page, /Ничего не услышали/);
+    await page.getByLabel('Фраза').waitFor({ timeout: 3000 });
+    await micOff(page, '«Готово» без слов');
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+
+    // ✕ во время прослушивания
+    await openListening(page);
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+    await micOff(page, 'закрыли крестиком');
+    await lacks(page, /Говорите/);
+
+    // Esc во время прослушивания
+    await openListening(page);
+    await page.keyboard.press('Escape');
+    await micOff(page, 'нажали Esc');
+
+    // «Набрать вместо голоса»
+    await openListening(page);
+    await page.getByRole('button', { name: 'Набрать вместо голоса' }).click();
+    await micOff(page, 'перешли к набору');
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+
+    // браузер сам закончил слушать (пауза в речи): услышанное сразу идёт на проверку
+    await openListening(page);
+    await page.evaluate(() => (window as unknown as { __say(t: string): void }).__say('покормила 90 мл'));
+    await has(page, /покормила 90 мл/);
+    await page.evaluate(() => (window as unknown as { __finish(): void }).__finish());
+    await has(page, /Записать\?/);
+    await micOff(page, 'браузер закончил слушать');
+    await page.getByRole('button', { name: 'Записать', exact: true }).click();
+    await has(page, /Бутылочка · 90 мл/);
+    await micOff(page, 'запись сделана');
+    assert.equal((await mic(page)).started, 5, 'каждое открытие шторки запускало распознавание ровно один раз');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('микрофон: ошибка выключает его, «Сказать ещё раз» включает заново', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await openListening(page);
+    await page.evaluate(() => (window as unknown as { __fail(c: string): void }).__fail('network'));
+    await has(page, /Нет связи с сервисом распознавания/);
+    await micOff(page, 'ошибка сети');
+    await page.getByLabel('Фраза').waitFor({ timeout: 3000 });
+
+    await page.getByRole('button', { name: 'Сказать ещё раз' }).click();
+    await has(page, /Говорите/);
+    assert.deepEqual(await mic(page), { started: 2, live: 1 });
+    await lacks(page, /Нет связи/);
+    await page.evaluate(() => (window as unknown as { __say(t: string): void }).__say('подгузник мокрый'));
+    await has(page, /подгузник мокрый/);
+    await page.getByRole('button', { name: 'Готово' }).click();
+    await has(page, /Подгузник · мокрый/);
+    await micOff(page, 'после повторной попытки');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('микрофон: приложение ушло в фон или закрывается — микрофон выключен, сказанное не теряется', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await openListening(page);
+    await page.evaluate(() => (window as unknown as { __say(t: string): void }).__say('покормила 100 мл'));
+    await has(page, /покормила 100 мл/);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await has(page, /Записать\?/);
+    await micOff(page, 'приложение ушло в фон');
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+
+    await page.evaluate(() => Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }));
+    await openListening(page);
+    assert.equal((await mic(page)).live, 1);
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await micOff(page, 'страница закрывается');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('микрофон: молчание дольше 30 секунд — слушание заканчивается само, микрофон выключен', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await openListening(page);
+    await page.clock.fastForward(29_000);
+    assert.equal((await mic(page)).live, 1, 'до 30 секунд ещё слушаем');
+    await page.clock.fastForward(2_000);
+    await has(page, /Ничего не услышали/);
+    await micOff(page, 'долгая тишина');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('микрофон: переход на другой экран (свайп «назад») закрывает шторку и выключает микрофон', async () => {
+    const { ctx, page, errors } = await fresh({ speech: 'track' });
+    await onboard(page);
+    await openListening(page);
+    await page.evaluate(() => { location.hash = '#/day'; });
+    await expectHash(page, '#/day');
+    await lacks(page, /Говорите/);
+    await micOff(page, 'перешли на другой экран');
+    assert.equal(await page.locator('.sheet').count(), 0, 'шторка не висит над чужим экраном');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('шторка: ночной режим включился сам, пока вписывали кормление, — шторка и введённое остаются', async () => {
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T20:58:00+03:00') });
+    await onboard(page);
+    await expectHash(page, '#/');
+    await page.getByRole('button', { name: 'Еда' }).click();
+    await page.getByRole('dialog').waitFor();
+    await page.locator('#e-ml').fill('135');
+    await page.clock.fastForward(3 * 60_000);
+    await expectHash(page, '#/night');
+    assert.equal(await page.locator('#e-ml').inputValue(), '135', 'введённое не пропало');
+    assert.equal(await page.locator('.sheet').count(), 1, 'шторка осталась');
+    assert.deepEqual(errors, []);
     await ctx.close();
   });
 

@@ -1,6 +1,6 @@
 /** Шторка голосового ввода: слушаем, показываем, что поняли, и записываем после подтверждения. */
 import { html, nothing, TemplateResult } from 'lit-html';
-import { applyVoice, setVoiceText, speechSupported, toConfirm, toText, voiceParsed } from '../../app/flows';
+import { applyVoice, retryVoice, setVoiceText, speechSupported, toConfirm, toText, voiceParsed } from '../../app/flows';
 import { VoiceSheet, closeSheet } from '../../app/ui';
 import { describeAction, VoiceAction } from '../../engine/voice';
 import { hm } from '../../engine/time';
@@ -46,11 +46,11 @@ function typing(sh: VoiceSheet): TemplateResult {
     dark: true,
     onClose: close,
     body: html`
-      ${speechSupported() ? nothing : note('В этом браузере нет распознавания речи — наберите фразу, понимаем её так же.')}
+      ${speechSupported() ? nothing : note('В этом браузере нет распознавания речи — наберите фразу или продиктуйте её значком микрофона на клавиатуре: понимаем так же.')}
       ${textarea('v-text', 'Фраза', sh.transcript, setVoiceText, 'Покормила в 14:20, 120 мл, потом сменила подгузник')}
       ${note('Можно несколько действий сразу и время: «уснула 20 минут назад», «в 2 часа дня покормили».')}
       ${errorLine(sh.error)}`,
-    footer: html`${primary('Разобрать', toConfirm, { disabled: !sh.transcript.trim() })}`,
+    footer: html`${primary('Разобрать', toConfirm, { disabled: !sh.transcript.trim() })}${speechSupported() ? quiet('Сказать ещё раз', retryVoice) : nothing}`,
   });
 }
 
