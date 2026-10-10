@@ -47,6 +47,16 @@ jobs:
           cat offline.log
           if [ $code -ne 0 ]; then echo "::error title=offline::$(tr '\n' '|' < offline.log | head -c 6000)"; fi
           exit $code
+      # Обход всех экранов и шторок на размерах от 320×568 до 1280×720, в том числе с клавиатурой и с длинными именами:
+      # выход за край, обрезанный текст, наложение кнопок, кнопки меньше 24 px, шторка не помещается в экран.
+      - name: Аудит интерфейса
+        run: |
+          set +e
+          AUDIT_WARN=0 BASE_URL=http://127.0.0.1:4173/ npm run test:audit > audit.log 2>&1
+          code=$?
+          cat audit.log
+          if [ $code -ne 0 ]; then echo "::error title=audit::$(grep -E '^  ✗|размеры' audit.log | tr '\n' '|' | head -c 6000)"; fi
+          exit $code
       # Эталоны сняты в одном окружении, а края букв в разных сборках Chromium сглаживаются чуть иначе
       # (на раннере 0,2–1 % отличающихся пикселей, и все они — по краям букв). Поэтому здесь сравнение
       # «грубое»: снимки усредняются блоками 4×4, и сдвиг блока, другой цвет или потерянный элемент
@@ -60,6 +70,15 @@ jobs:
           code=$?
           cat visual.log
           if [ $code -ne 0 ]; then echo "::error title=visual::$(grep -E '^(OK|FAIL)' visual.log | tr '\n' '|' | head -c 3000)"; fi
+          exit $code
+      # Браузер iPhone может показывать страницу в масштабе 85 % (окно шире 390): приложение обязано выглядеть так же.
+      - name: Сверка с макетом при масштабе страницы 85 %
+        run: |
+          set +e
+          VISUAL_PAGE_ZOOM=0.85 BASE_URL=http://127.0.0.1:5173/ npm run test:visual > visual85.log 2>&1
+          code=$?
+          cat visual85.log
+          if [ $code -ne 0 ]; then echo "::error title=visual85::$(grep -E '^(OK|FAIL)' visual85.log | tr '\n' '|' | head -c 3000)"; fi
           exit $code
       - name: Картинки расхождений
         if: always()

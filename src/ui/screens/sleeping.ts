@@ -47,7 +47,7 @@ export function sleepingScreen(d: Derived, s: SleepEvent, t: number, a: Sleeping
       </svg>
 
       <div style="position:relative;flex:none;padding:24px 20px 0;display:flex;align-items:center;justify-content:space-between">
-        <a href=${href('/')} aria-label="Назад" style="width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,0.12);color:#FFFFFF;display:flex;align-items:center;justify-content:center;text-decoration:none">${icon('chevL')}</a>
+        <a href=${href('/')} aria-label="Назад" style="position:relative;z-index:2;width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,0.12);color:#FFFFFF;display:flex;align-items:center;justify-content:center;text-decoration:none">${icon('chevL')}</a>
         <div style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:#B3B1FF">${night ? 'НОЧНОЙ СОН' : 'ДНЕВНОЙ СОН'}</div>
         <div style="width:44px"></div>
       </div>

@@ -46,12 +46,12 @@ const cardDecor = (): TemplateResult => html`
 function header(d: Derived, a: HomeActions): TemplateResult {
   return html`
     <div style="flex:none;display:flex;align-items:center;justify-content:space-between;padding:24px 20px 4px">
-      <button type="button" @click=${a.openChild} aria-label="Выбрать ребёнка" style="border:0;background:transparent;padding:0;min-height:44px;display:flex;align-items:center;gap:12px;font-family:${SANS};color:#14172E;text-align:left">
-        <span style="position:relative;width:44px;height:44px;border-radius:22px;background:#E6E6FB;color:#3F3CBB;display:flex;align-items:center;justify-content:center;font-family:${SERIF};font-weight:400;font-size:20px">${initial(d.child.name)}<span style="position:absolute;right:-1px;bottom:-1px;width:14px;height:14px;box-sizing:border-box;border-radius:7px;background:#FFD66B;border:2.5px solid #F1F3FB"></span></span>
-        <span style="display:flex;flex-direction:column;gap:1px"><span style="font-size:17px;font-weight:700;line-height:22px">${d.child.name}</span><span style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A">${d.age.label}</span></span>
-        ${icon('chevD', { size: 18, stroke: '#5A5F7A' })}
+      <button type="button" @click=${a.openChild} aria-label="Выбрать ребёнка" style="min-width:0;border:0;background:transparent;padding:0;min-height:44px;display:flex;align-items:center;gap:12px;font-family:${SANS};color:#14172E;text-align:left">
+        <span style="position:relative;flex:none;width:44px;height:44px;border-radius:22px;background:#E6E6FB;color:#3F3CBB;display:flex;align-items:center;justify-content:center;font-family:${SERIF};font-weight:400;font-size:20px">${initial(d.child.name)}<span style="position:absolute;right:-1px;bottom:-1px;width:14px;height:14px;box-sizing:border-box;border-radius:7px;background:#FFD66B;border:2.5px solid #F1F3FB"></span></span>
+        <span style="min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:17px;font-weight:700;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.child.name}</span><span style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.age.label}</span></span>
+        <span style="flex:none;display:flex">${icon('chevD', { size: 18, stroke: '#5A5F7A' })}</span>
       </button>
-      <button type="button" @click=${a.openReminders} aria-label="Напоминания" style="width:44px;height:44px;border:1px solid #E1E4F1;border-radius:22px;background:#FFFFFF;color:#14172E;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px -12px rgba(34,31,102,0.35)">${icon('bell')}</button>
+      <button type="button" @click=${a.openReminders} aria-label="Напоминания" style="flex:none;width:44px;height:44px;border:1px solid #E1E4F1;border-radius:22px;background:#FFFFFF;color:#14172E;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px -12px rgba(34,31,102,0.35)">${icon('bell')}</button>
     </div>`;
 }
 
@@ -185,8 +185,8 @@ function rowFor(item: RecentItem, a: HomeActions): TemplateResult {
   return html`
     <button type="button" @click=${() => a.openEvent(e)} style="width:100%;height:64px;box-sizing:border-box;border:0;border-radius:22px;background:#FFFFFF;padding:0 16px;display:flex;align-items:center;gap:12px;text-align:left;font-family:${SANS};color:#14172E;box-shadow:0 1px 2px rgba(20,23,46,0.04),0 14px 26px -18px rgba(34,31,102,0.35)">
       <span style="width:40px;height:40px;border-radius:14px;background:${st.bg};color:${st.fg};display:flex;align-items:center;justify-content:center;flex:none">${icon(st.icon)}</span>
-      <span style="flex:1;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px">${title}</span>${sub ? html`<span style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A">${sub}</span>` : ''}</span>
-      <span style="font-size:15px;font-weight:600;color:#5A5F7A">${right}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:16px;font-weight:600;line-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</span>${sub ? html`<span style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</span>` : ''}</span>
+      <span style="flex:none;white-space:nowrap;font-size:15px;font-weight:600;color:#5A5F7A">${right}</span>
     </button>`;
 }
 

@@ -42,8 +42,8 @@ export function nightScreen(d: Derived, t: number, a: NightActions): TemplateRes
       <div style="position:absolute;left:0;top:0;width:100%;height:420px;background:radial-gradient(circle at 50% 0%, rgba(75,72,214,0.30) 0%, rgba(75,72,214,0) 70%)"></div>
 
       <div style="position:relative;flex:none;padding:24px 20px 0;display:flex;align-items:center;gap:12px">
-        <div style="width:44px;height:44px;border-radius:22px;background:#151833;border:1px solid rgba(255,196,107,0.25);color:#FFC46B;display:flex;align-items:center;justify-content:center">${icon('moon', { fo: 0.22 })}</div>
-        <div style="display:flex;flex-direction:column;gap:1px"><div style="font-size:17px;font-weight:700;line-height:22px">${d.child.name}</div><div style="font-size:13px;font-weight:500;line-height:18px;color:#A3A6C9">${subtitle}</div></div>
+        <div style="flex:none;width:44px;height:44px;border-radius:22px;background:#151833;border:1px solid rgba(255,196,107,0.25);color:#FFC46B;display:flex;align-items:center;justify-content:center">${icon('moon', { fo: 0.22 })}</div>
+        <div style="min-width:0;display:flex;flex-direction:column;gap:1px"><div style="font-size:17px;font-weight:700;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.child.name}</div><div style="font-size:13px;font-weight:500;line-height:18px;color:#A3A6C9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitle}</div></div>
       </div>
 
       <div style="position:relative;flex:none;margin:20px 20px 0;box-sizing:border-box;border-radius:32px;background:linear-gradient(160deg,#1E2148 0%,#151833 100%);border:1px solid rgba(255,196,107,0.22);padding:20px 20px 20px 22px;display:flex;align-items:center;justify-content:space-between;box-shadow:inset 0 1px 0 rgba(255,255,255,0.06),0 26px 44px -26px rgba(255,196,107,0.30)">

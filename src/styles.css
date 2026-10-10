@@ -53,6 +53,10 @@ input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-ca
   margin: 0 auto;
   overflow: hidden;
   background: #F1F3FB;
+  /* Длинное слово без пробелов (имя, заметка, адрес) переносится, а не раздвигает экран. Обычный текст не меняется.
+     Именно break-word, а не anywhere: anywhere уменьшает минимальную ширину элементов в строке, и плитки сжимаются
+     до переноса «Подгузни / к» (это поймала сверка с макетом). Элементы в строках защищены отдельно: min-width:0 и многоточие. */
+  overflow-wrap: break-word;
 }
 
 /* На широком экране приложение — «телефон» посередине. */
@@ -155,6 +159,14 @@ button:disabled { cursor: default; }
   outline: none;
 }
 /* Ночью шторки тёмные, чтобы не слепить. */
+/* Клавиатура на невысоком экране: закреплённый низ шторки съедает всё место, и поле почти не видно.
+   Тогда шторка прокручивается целиком: шапка с названием и кнопкой «Закрыть» остаётся наверху, кнопки идут за содержимым. */
+@media (max-height: 760px) {
+  html.kb .sheet { overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; }
+  html.kb .sheet > .scroll { flex: none !important; overflow: visible; }
+  html.kb .sheet > :nth-child(2) { position: sticky; top: 0; z-index: 2; background: var(--s-bg); }
+}
+
 .sheet.dark {
   --s-bg: #14163A;
   --s-fg: #ECEBFF;

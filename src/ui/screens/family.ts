@@ -100,7 +100,7 @@ export function viewerCardView(m: ViewerModel): TemplateResult {
       ${cardRings(350, 150, svg`<circle cx="330" cy="10" r="100" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="2"/><circle cx="330" cy="10" r="62" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="2"/><circle cx="200" cy="22" r="1.2" fill="#FFFFFF" fill-opacity="0.6"/><circle cx="288" cy="120" r="1" fill="#FFFFFF" fill-opacity="0.5"/>`)}
       <div style="position:relative;display:flex;align-items:center;gap:16px">
         <div style="width:56px;height:56px;border-radius:28px;background:rgba(255,255,255,0.12);color:#FFD66B;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 0 22px rgba(255,214,107,0.28)">${ic}</div>
-        <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
           <div style="font-family:${SERIF};font-weight:400;font-size:25px;line-height:1.2;letter-spacing:0;text-shadow:0 0 22px rgba(179,177,255,0.5)">${title}</div>
           <div style="font-size:15px;font-weight:500;color:#C9C8F5">${sub}</div>
         </div>

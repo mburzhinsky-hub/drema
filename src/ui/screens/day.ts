@@ -58,9 +58,9 @@ function row(r: TimelineRow, first: boolean, a: DayActions): TemplateResult {
   const st = TYPE_STYLE[r.kind];
   return html`
     <button type="button" @click=${() => a.openRow(r)} style="position:relative;width:100%;height:56px;border:0;background:transparent;padding:0;display:flex;align-items:center;gap:12px;text-align:left;font-family:${SANS};color:#14172E">
-      <div style="width:44px;font-size:15px;font-weight:${first ? 700 : 600};${first ? '' : 'color:#5A5F7A'}">${hm(r.t)}</div>
+      <div style="flex:none;width:44px;font-size:15px;font-weight:${first ? 700 : 600};${first ? '' : 'color:#5A5F7A'}">${hm(r.t)}</div>
       <div style="width:36px;height:36px;border-radius:12px;background:${st.bg};color:${st.fg};display:flex;align-items:center;justify-content:center;flex:none">${icon(st.icon, { size: 20, fo: 0.22 })}</div>
-      <div style="display:flex;flex-direction:column;gap:1px"><div style="font-size:16px;font-weight:600;line-height:21px">${r.title}</div>${r.sub ? html`<div style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A">${r.sub}</div>` : ''}</div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><div style="font-size:16px;font-weight:600;line-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.title}</div>${r.sub ? html`<div style="font-size:13px;font-weight:500;line-height:18px;color:#5A5F7A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.sub}</div>` : ''}</div>
     </button>`;
 }
 

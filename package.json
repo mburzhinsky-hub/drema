@@ -17,7 +17,8 @@
     "splash": "tsx tools/make-splash.ts",
     "test:e2e": "tsx tools/e2e/run.ts",
     "test:offline": "tsx tools/e2e/offline.ts",
-    "test:ios-shots": "tsx tools/visual/ios-shots.ts"
+    "test:ios-shots": "tsx tools/visual/ios-shots.ts",
+    "test:audit": "tsx tools/audit/ui.ts"
   },
   "dependencies": {
     "@fontsource/nunito": "^5.3.0",

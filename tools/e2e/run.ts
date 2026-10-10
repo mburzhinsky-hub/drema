@@ -7,6 +7,7 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
+import { FAKE_VISUAL_VIEWPORT } from '../shared/fake';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:5173/';
 const START = new Date('2026-10-10T14:00:00+03:00');
@@ -51,22 +52,6 @@ const SPEECH_SCRIPT: Record<Speech, string> = {
     }
     window.webkitSpeechRecognition = DeniedSR; window.SpeechRecognition = DeniedSR;`,
 };
-
-/**
- * Настоящая клавиатура в Chromium не открывается, поэтому видимую область подменяем так, как её ведёт iOS:
- * при клавиатуре visualViewport становится ниже окна, а при «подкрутке» страницы получает сдвиг offsetTop.
- * window.__vv(высота, сдвиг) — «клавиатура выехала / ушла».
- */
-const FAKE_VISUAL_VIEWPORT = (idleHeight: number | null): string => `
-  (() => {
-    const vv = new EventTarget();
-    Object.assign(vv, { width: innerWidth, height: ${idleHeight ?? 'innerHeight'}, offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1 });
-    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
-    window.__vv = (height, offsetTop = 0) => {
-      vv.height = height; vv.offsetTop = offsetTop; vv.pageTop = offsetTop;
-      vv.dispatchEvent(new Event('resize')); vv.dispatchEvent(new Event('scroll'));
-    };
-  })();`;
 
 async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number }; screen?: { width: number; height: number }; touch?: boolean } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext({
@@ -1139,6 +1124,83 @@ async function main(): Promise<void> {
     assert.equal(await normal.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--z').trim()), '');
     assert.deepEqual(errors, []);
     await normal.ctx.close();
+    await ctx.close();
+  });
+
+  await test('длинное имя и заметка без пробелов: ничего не вылезает за экран, колокольчик на месте', async () => {
+    // Раньше имя из 30 букв выталкивало «Напоминания» за край, а длинная заметка раздвигала журнал и главный экран.
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T13:42:00+03:00') });
+    await page.goto(BASE, { waitUntil: 'load' });
+    await page.getByRole('button', { name: /Начать/ }).click();
+    await page.getByRole('button', { name: 'Сначала посмотреть на примере' }).click();
+    await page.waitForFunction(() => ['', '#/'].includes(location.hash));
+    await page.getByRole('button', { name: 'Выбрать ребёнка' }).click();
+    await page.getByRole('button', { name: /Изменить:/ }).first().click();
+    await page.locator('#c-name').fill('А'.repeat(30));
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: /Заметка/ }).click();
+    await page.locator('#e-text').fill('Б'.repeat(60));
+    await page.getByRole('button', { name: 'Записать', exact: true }).click();
+    await has(page, /Записано: заметка/);
+    await page.getByRole('button', { name: 'Закрыть' }).click();
+    for (const r of ['#/', '#/day', '#/family', '#/report', '#/settings']) {
+      await page.evaluate((h) => { location.hash = h; }, r);
+      await page.waitForTimeout(250);
+      const m = await page.evaluate(() => {
+        const out = [...document.querySelectorAll('#app button, #app a, #app h1, #app h2')]
+          .map((el) => ({ el: el as HTMLElement, r: el.getBoundingClientRect() }))
+          .filter(({ r }) => r.width > 0 && (r.right > innerWidth + 1 || r.left < -1))
+          .map(({ el, r }) => `${el.tagName} «${(el.getAttribute('aria-label') || el.innerText).slice(0, 30)}» ${Math.round(r.left)}…${Math.round(r.right)}`);
+        const bell = document.querySelector('button[aria-label="Напоминания"]')?.getBoundingClientRect();
+        return { out, wide: document.documentElement.scrollWidth - innerWidth, bellRight: bell ? Math.round(bell.right) : null };
+      });
+      assert.deepEqual(m.out, [], `${r}: за краем экрана`);
+      assert.ok(m.wide <= 0, `${r}: страница шире окна на ${m.wide}px`);
+      if (r === '#/') assert.ok(m.bellRight !== null && m.bellRight <= 390 - 19, `колокольчик на месте (правый край ${m.bellRight})`);
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('iPhone SE (375×667): с клавиатурой поле и «Закрыть» на виду, шторка прокручивается до самых кнопок', async () => {
+    // Раньше закреплённый низ шторки оставлял на тело 35 px: поле «Кого приглашаете» было почти не видно.
+    const { ctx, page, errors } = await fresh({ keyboard: true, touch: true, viewport: { width: 375, height: 667 } });
+    await onboard(page);
+    await page.evaluate(() => { location.hash = '#/family'; });
+    await page.getByRole('button', { name: 'Пригласить по ссылке' }).click();
+    await page.locator('#i-name').focus();
+    await page.waitForFunction(() => document.documentElement.classList.contains('kb'), null, { timeout: 3000 });
+    await page.waitForTimeout(500);
+    const g = await page.evaluate(() => {
+      const r = (el: Element | null) => (el ? el.getBoundingClientRect() : null);
+      const sheet = document.querySelector('.sheet') as HTMLElement;
+      const head = sheet.children[1] as HTMLElement;
+      const f = r(document.getElementById('i-name'))!;
+      const close = r(document.querySelector('.sheet button[aria-label="Закрыть"]'))!;
+      const app = r(document.getElementById('app'))!;
+      const before = sheet.scrollTop;
+      sheet.scrollTop = sheet.scrollHeight;
+      const copy = r([...sheet.querySelectorAll('button')].find((b) => /Скопировать ссылку/.test(b.textContent ?? '')) ?? null);
+      sheet.scrollTop = before;
+      return {
+        scrolls: sheet.scrollHeight > sheet.clientHeight + 1,
+        sticky: getComputedStyle(head).position,
+        headBottom: r(head)!.bottom,
+        field: { top: f.top, bottom: f.bottom },
+        close: { top: close.top, bottom: close.bottom },
+        appBottom: app.bottom,
+        copyBottom: copy ? copy.bottom : null,
+      };
+    });
+    assert.equal(g.scrolls, true, 'шторка прокручивается целиком');
+    assert.equal(g.sticky, 'sticky', 'шапка закреплена');
+    assert.ok(g.close.top >= 0 && g.close.bottom <= g.headBottom + 1, `«Закрыть» на виду: ${JSON.stringify(g.close)}`);
+    assert.ok(g.field.top >= g.headBottom - 1 && g.field.bottom <= g.appBottom + 1, `поле на виду: ${JSON.stringify(g.field)}, шапка до ${g.headBottom}, приложение до ${g.appBottom}`);
+    assert.ok(g.copyBottom !== null && g.copyBottom <= g.appBottom + 1, `кнопки достижимы прокруткой: ${g.copyBottom} ≤ ${g.appBottom}`);
+    assert.deepEqual(errors, []);
     await ctx.close();
   });
 
