@@ -5,6 +5,7 @@ import { EntrySheet } from '../../app/ui';
 import { DiaperKind, FeedHow } from '../../engine/model';
 import { getState } from '../../store/store';
 import { icon } from '../icons';
+import { NOTE_MAX } from '../../store/state';
 import { TYPE_STYLE } from '../palette';
 import { SANS, SERIF } from '../parts';
 import { chips, danger, errorLine, field, frame, primary, segmented, textarea } from './kit';
@@ -153,7 +154,7 @@ export function entrySheet(sh: EntrySheet): TemplateResult {
       body = growthBody(sh);
       break;
     case 'note':
-      body = html`${textarea('e-text', 'Заметка', sh.text, (v) => patchEntry({ text: v }), 'Что хотите запомнить?')}${timeRow(sh)}`;
+      body = html`${textarea('e-text', 'Заметка', sh.text, (v) => patchEntry({ text: v }), 'Что хотите запомнить?', NOTE_MAX)}${timeRow(sh)}`;
       break;
     default:
       body = html`<div style="font-size:15px;font-weight:500;line-height:21px;color:var(--s-muted)">Отметим купание${sh.editId ? '' : ' — время можно поменять'}.</div>${timeRow(sh)}`;

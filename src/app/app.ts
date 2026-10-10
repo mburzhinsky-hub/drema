@@ -199,6 +199,8 @@ const toastView = (tst: Toast | null, high: boolean, top: boolean): TemplateResu
   </div>`;
 
 let lastSheet: unknown = null;
+/** Начало суток при прошлой отрисовке: по нему замечаем, что наступила полночь. */
+let lastToday = 0;
 
 function draw(): void {
   const s = getState();
@@ -226,6 +228,12 @@ function draw(): void {
     theme?.setAttribute('content', THEME[route.name] ?? '#F1F3FB');
     document.documentElement.style.setProperty('--page-bg', PAGE_BG[route.name] ?? '#F1F3FB');
   }
+
+  // Полночь прошла, пока открыт журнал: просматриваемый прошлый день остаётся тем же (смещение считается от «сегодня»,
+  // и без поправки «Вчера» молча превратилось бы в «позавчера»). Сам «сегодня» (смещение 0) идёт вместе с часами.
+  const today = startOfDay(t);
+  if (lastToday && today !== lastToday && ui.dayOffset < 0) ui.dayOffset = Math.min(0, ui.dayOffset - Math.round((today - lastToday) / DAY));
+  lastToday = today;
 
   // Шторка принадлежит экрану, на котором открылась. Если адрес сменили снаружи (свайп «назад», ссылка), шторку закрываем
   // (вместе с ней выключается микрофон), а не оставляем висеть над чужим экраном. Переход самого приложения

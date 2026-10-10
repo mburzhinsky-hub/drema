@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { STORAGE_KEY, emptyState } from '../src/store/state';
-import { disablePersistence, getState, loadFromStorage, setState, subscribe, update } from '../src/store/store';
+import { UNREADABLE_KEY, disablePersistence, getState, loadFromStorage, setState, subscribe, update } from '../src/store/store';
 
 /** Хранилище браузера в памяти. */
 function fakeStorage(initial: Record<string, string> = {}) {
@@ -68,6 +68,38 @@ describe('сохранение в браузере', () => {
     vi.stubGlobal('localStorage', fakeStorage({ [STORAGE_KEY]: JSON.stringify({ ...saved(), v: 99 }) }));
     loadFromStorage();
     expect(getState().children).toEqual([]);
+  });
+
+  it('непрочитанное не пропадает: копия остаётся рядом, даже когда приложение пишет новые данные', () => {
+    setState(emptyState());
+    const ls = fakeStorage({ [STORAGE_KEY]: '{не json' });
+    vi.stubGlobal('localStorage', ls);
+    loadFromStorage();
+    expect(ls.data.get(UNREADABLE_KEY)).toBe('{не json');
+    update((s) => ({ ...s, demo: true }));
+    vi.advanceTimersByTime(300);
+    expect(JSON.parse(ls.data.get(STORAGE_KEY)!).demo).toBe(true);
+    expect(ls.data.get(UNREADABLE_KEY)).toBe('{не json');
+  });
+
+  it('данные новой версии приложения тоже откладываются, а не затираются', () => {
+    setState(emptyState());
+    const future = JSON.stringify({ ...saved(), v: 2 });
+    const ls = fakeStorage({ [STORAGE_KEY]: future });
+    vi.stubGlobal('localStorage', ls);
+    loadFromStorage();
+    expect(ls.data.get(UNREADABLE_KEY)).toBe(future);
+  });
+
+  it('нормальные данные и пустое хранилище копий не создают', () => {
+    const ls = fakeStorage({ [STORAGE_KEY]: JSON.stringify(saved()) });
+    vi.stubGlobal('localStorage', ls);
+    loadFromStorage();
+    expect(ls.data.has(UNREADABLE_KEY)).toBe(false);
+    const empty = fakeStorage();
+    vi.stubGlobal('localStorage', empty);
+    loadFromStorage();
+    expect(empty.data.has(UNREADABLE_KEY)).toBe(false);
   });
 
   it('данные с мусорными записями читаются без мусора', () => {

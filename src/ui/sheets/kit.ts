@@ -99,11 +99,11 @@ export function field(o: FieldOpts): TemplateResult {
     </div>`;
 }
 
-export function textarea(id: string, label: string, value: string, onInput: (v: string) => void, placeholder = ''): TemplateResult {
+export function textarea(id: string, label: string, value: string, onInput: (v: string) => void, placeholder = '', maxlength?: number): TemplateResult {
   return html`
     <div style="display:flex;flex-direction:column;gap:6px">
       <label for=${id} style=${LABEL}>${label.toUpperCase()}</label>
-      <textarea id=${id} class="field" rows="3" .value=${value} placeholder=${placeholder} @input=${(e: Event) => onInput((e.target as HTMLTextAreaElement).value)}></textarea>
+      <textarea id=${id} class="field" rows="3" .value=${value} placeholder=${placeholder} maxlength=${maxlength ?? nothing} @input=${(e: Event) => onInput((e.target as HTMLTextAreaElement).value)}></textarea>
     </div>`;
 }
 

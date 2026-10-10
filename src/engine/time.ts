@@ -102,6 +102,15 @@ export function toTimeInput(t: number): string {
   return hm(t);
 }
 
+/**
+ * «чч:мм» в сутках, начинающихся в dayStart, но не позже nowT (с запасом в минуту): если выходит позже — то же время вчера.
+ * «Вчера» считается по календарю (addDays), а не вычитанием 24 часов: в сутки перевода часов они длятся 23 или 25 часов.
+ */
+export function latestAtOrBefore(dayStart: number, minutes: number, nowT: number): number {
+  const t = atMinutes(dayStart, minutes);
+  return t > nowT + MIN ? atMinutes(addDays(dayStart, -1), minutes) : t;
+}
+
 /** Подставляет «чч:мм» в сутки опорного момента. Если получилось позже now — берёт вчера. */
 export function resolveTimeToday(hmStr: string, ref: number, nowT: number): number {
   const mins = parseHM(hmStr);

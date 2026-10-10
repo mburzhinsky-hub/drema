@@ -15,6 +15,9 @@ export interface AppState {
 
 export const STORAGE_KEY = 'drema:v1';
 
+/** Самая длинная заметка: всё, что длиннее, при сохранении и чтении обрезалось бы молча, поэтому ограничиваем при вводе. */
+export const NOTE_MAX = 500;
+
 export function emptyState(): AppState {
   return {
     v: 1,
@@ -93,7 +96,7 @@ export function sanitizeEvent(raw: unknown, childIds: ReadonlySet<string>): Drem
     case 'growth':
       return { ...base, type: 'growth', ...numbers(raw, ['kg', 'cm']) };
     case 'note':
-      return isStr(raw.text) ? { ...base, type: 'note', text: raw.text.slice(0, 500) } : null;
+      return isStr(raw.text) ? { ...base, type: 'note', text: raw.text.slice(0, NOTE_MAX) } : null;
   }
 }
 

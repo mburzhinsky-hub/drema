@@ -630,6 +630,37 @@ async function main(): Promise<void> {
     await ctx.close();
   });
 
+  await test('копия: поверх существующих данных сначала спрашиваем, «Отмена» ничего не меняет', async () => {
+    const { ctx, page, errors } = await fresh();
+    await onboard(page);
+    await page.getByRole('button', { name: 'Подгузник' }).first().click();
+    await page.getByRole('button', { name: 'Грязный' }).click();
+    await page.evaluate(() => { location.hash = '#/settings'; });
+    const backup = JSON.stringify({
+      v: 1, onboarded: true, activeChildId: 'x', demo: false,
+      children: [{ id: 'x', name: 'Тимур', birth: '2025-09-01', gender: 'm', createdAt: 0 }],
+      events: [{ id: 'e1', childId: 'x', type: 'bath', t: Date.parse('2026-10-10T10:00:00+03:00'), updatedAt: 1 }],
+      members: [], settings: {},
+    });
+    const file = { name: 'drema.json', mimeType: 'application/json', buffer: Buffer.from(backup) };
+    await page.getByLabel('Загрузить копию').setInputFiles(file);
+    await has(page, /Заменить данные копией\?/);
+    await has(page, /Сейчас на этом устройстве: 1 малыш, 1 запись\. В копии: 1 малыш, 1 запись\./);
+    await page.getByRole('button', { name: 'Отмена' }).click();
+    await lacks(page, /Заменить данные копией/);
+    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem('drema:v1') ?? '{}').children?.map((c: { name: string }) => c.name));
+    await page.waitForTimeout(400);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('drema:v1')!).children.map((c: { name: string }) => c.name)), ['Мила'], `данные на месте (было ${JSON.stringify(kept)})`);
+    // подтвердили — заменилось
+    await page.getByLabel('Загрузить копию').setInputFiles(file);
+    await page.getByRole('button', { name: 'Заменить', exact: true }).click();
+    await home(page);
+    await has(page, /Тимур/);
+    await lacks(page, /Мила/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
   await test('битый файл копии не ломает приложение', async () => {
     const { ctx, page, errors } = await fresh();
     await page.goto(BASE, { waitUntil: 'load' });
@@ -1124,6 +1155,69 @@ async function main(): Promise<void> {
     assert.equal(await normal.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--z').trim()), '');
     assert.deepEqual(errors, []);
     await normal.ctx.close();
+    await ctx.close();
+  });
+
+  await test('сон: забыли нажать «Проснулась» (больше 20 часов) — просим указать время, а не пишем сон на сутки', async () => {
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T13:42:00+03:00') });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Уснула' }).click();
+    await expectHash(page, '#/sleeping');
+    await page.clock.fastForward(21 * 3600 * 1000);
+    await page.getByRole('button', { name: /^Проснулась/ }).click();
+    await has(page, /Время сна/);
+    await has(page, /Сон идёт больше 20 часов/);
+    // «Сохранить» с подставленным «сейчас» не проходит: это всё те же 21 час
+    await page.getByRole('button', { name: 'Сохранить' }).click();
+    await has(page, /Сон дольше 20 часов/);
+    // указали настоящее время пробуждения
+    await page.locator('#s-end').fill('2026-10-10T15:00');
+    await page.getByRole('button', { name: 'Сохранить' }).click();
+    await has(page, /Время сохранено/);
+    await page.evaluate(() => { location.hash = '#/'; });
+    await has(page, /1 ч 18 мин/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('журнал: полночь прошла, пока смотрели «Вчера» — остаётся тот же день, а не позавчера', async () => {
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T20:58:00+03:00') });
+    await onboard(page);
+    await page.evaluate(() => { location.hash = '#/day'; });
+    await has(page, /Сегодня/);
+    await page.getByRole('button', { name: 'Предыдущий день' }).click();
+    await has(page, /Вчера/);
+    await has(page, /9 октября/);
+    await page.clock.fastForward(3 * 3600 * 1000 + 2 * 60 * 1000);
+    await has(page, /Пятница/);
+    await has(page, /9 октября/);
+    await lacks(page, /Позавчера|8 октября/);
+    // а «Сегодня» идёт вместе с часами
+    await page.getByRole('button', { name: 'Следующий день' }).click();
+    await has(page, /Вчера/);
+    await page.getByRole('button', { name: 'Следующий день' }).click();
+    await has(page, /Сегодня/);
+    await has(page, /11 октября/);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  await test('заметка: длиннее 500 символов не набрать, и ничего не обрезается молча после перезапуска', async () => {
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T13:42:00+03:00') });
+    await onboard(page);
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: /Заметка/ }).click();
+    await page.locator('#e-text').fill('Я'.repeat(700));
+    assert.equal((await page.locator('#e-text').inputValue()).length, 500, 'поле не принимает больше 500 знаков');
+    await page.getByRole('button', { name: 'Записать', exact: true }).click();
+    await has(page, /Записано: заметка/);
+    await page.reload({ waitUntil: 'load' });
+    const kept = await page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem('drema:v1')!);
+      return st.events.filter((e: { type: string }) => e.type === 'note').map((e: { text: string }) => e.text.length);
+    });
+    assert.deepEqual(kept, [500]);
+    assert.deepEqual(errors, []);
     await ctx.close();
   });
 

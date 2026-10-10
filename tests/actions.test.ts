@@ -3,7 +3,7 @@ import { NoteEvent } from '../src/engine/model';
 import { liveEvents, sleepsOf } from '../src/engine/sleep';
 import { MIN } from '../src/engine/time';
 import {
-  activeChild, addChild, addEvent, addMember, canUndo, clearDemo, endSleep, exportJSON, importJSON, loadDemo, logDiaper,
+  activeChild, addChild, addEvent, addMember, canUndo, clearDemo, endSleep, exportJSON, hasUserData, importJSON, inspectBackup, loadDemo, logDiaper,
   logFeed, patchEvent, removeChild, removeEvent, removeMember, resetAll, selectChild, setUserName, startSleep, undo, undoDepth,
   undoTo, updateChild, updateMember, updateSettings, validateSleepTimes,
 } from '../src/store/actions';
@@ -260,6 +260,22 @@ describe('сон: начало и конец', () => {
     expect(endSleep(NOW + 10 * MIN).ok).toBe(false);
   });
 
+  it('сон дольше 20 часов не закрывается одним нажатием: забыли нажать «проснулась», время нужно указать вручную', () => {
+    withChild();
+    startSleep(at(-2, '09:00'));
+    const r = endSleep();
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toMatch(/больше 20 часов/);
+    // сон так и идёт: его можно закрыть, указав реальное время пробуждения
+    expect(endSleep(at(-2, '10:30')).ok).toBe(true);
+  });
+
+  it('сон ровно на границе в 20 часов ещё можно закрыть', () => {
+    withChild();
+    startSleep(NOW - 20 * 60 * MIN);
+    expect(endSleep().ok).toBe(true);
+  });
+
   it('отмена пробуждения возвращает сон в «идёт»', () => {
     withChild();
     startSleep(at(0, '13:00'));
@@ -428,6 +444,33 @@ describe('резервная копия', () => {
     const r = importJSON(text);
     expect(r).toEqual({ ok: true, value: { children: 1, events: 2 } });
     expect(getState()).toEqual(before);
+  });
+
+  it('inspectBackup показывает, что в копии, и ничего не меняет', () => {
+    withChild();
+    logFeed(at(0, '12:00'), 'bottle', { ml: 110 });
+    const e = addEvent({ type: 'bath', t: at(0, '11:00') } as never, 'Купание');
+    removeEvent(e.id, 'Удаление');
+    const text = exportJSON();
+    const before = getState();
+    expect(inspectBackup(text)).toEqual({ ok: true, value: { children: 1, events: 1 } });
+    expect(getState()).toBe(before);
+    expect(inspectBackup('это не json').ok).toBe(false);
+    expect(inspectBackup('{"v":2,"children":[],"events":[]}').ok).toBe(false);
+  });
+
+  it('hasUserData: пусто и примерные данные не считаются, свои записи — считаются', () => {
+    resetAll();
+    expect(hasUserData()).toBe(false);
+    loadDemo();
+    expect(hasUserData()).toBe(false);
+    clearDemo();
+    withChild();
+    expect(hasUserData()).toBe(true);
+    resetAll();
+    loadDemo();
+    addChild('Тимур', '2025-09-01', 'm');
+    expect(hasUserData()).toBe(true);
   });
 
   it('загрузка сбрасывает отмену', () => {

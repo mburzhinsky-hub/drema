@@ -101,6 +101,9 @@ export function startSleep(t: number = clockNow()): Result<SleepEvent> {
   return { ok: true, value: e };
 }
 
+/** Дольше этого сон считается ошибкой записи (забыли нажать «проснулась»): время пробуждения нужно указать вручную. */
+export const LONGEST_SLEEP = 20 * 60 * MIN;
+
 export function endSleep(t: number = clockNow()): Result<SleepEvent> {
   const child = activeChild();
   if (!child) return { ok: false, error: 'Сначала добавьте ребёнка' };
@@ -110,6 +113,7 @@ export function endSleep(t: number = clockNow()): Result<SleepEvent> {
   const n = clockNow();
   if (t > n + MIN) return { ok: false, error: 'Время ещё не наступило' };
   if (t <= act.t) return { ok: false, error: 'Пробуждение должно быть позже засыпания' };
+  if (t - act.t > LONGEST_SLEEP) return { ok: false, error: 'Сон идёт больше 20 часов: укажите время пробуждения вручную' };
   patchEvent(act.id, { end: t } as Partial<SleepEvent>, 'Пробуждение');
   return { ok: true, value: { ...act, end: t } };
 }
@@ -122,7 +126,7 @@ export function validateSleepTimes(id: string, start: number, end: number | null
   if (start > n + MIN) return 'Засыпание не может быть в будущем';
   if (end !== null && end > n + MIN) return 'Пробуждение не может быть в будущем';
   if (end !== null && end <= start) return 'Пробуждение должно быть позже засыпания';
-  if (end !== null && end - start > 20 * 60 * MIN) return 'Сон дольше 20 часов — проверьте время';
+  if (end !== null && end - start > LONGEST_SLEEP) return 'Сон дольше 20 часов — проверьте время';
   const others = sleepsOf(getState().events, child.id);
   const clash = overlaps(others, start, end ?? n, n, id);
   if (clash) return 'Это время пересекается с другим сном';
@@ -254,13 +258,29 @@ export function exportJSON(): string {
   return JSON.stringify(getState(), null, 2);
 }
 
+/** Сколько в копии детей и (не удалённых) записей. Копию при этом не применяем. */
+export function inspectBackup(text: string): Result<{ children: number; events: number }> {
+  try {
+    const s = sanitizeState(JSON.parse(text));
+    if (!s) return { ok: false, error: 'Файл не похож на резервную копию «Дрёмы»' };
+    return { ok: true, value: { children: s.children.length, events: s.events.filter((e) => !e.deleted).length } };
+  } catch {
+    return { ok: false, error: 'Не удалось прочитать файл' };
+  }
+}
+
+/** Есть ли на устройстве то, что загрузка копии затрёт. Примерные данные (Мила) не считаются. */
+export function hasUserData(s: AppState = getState()): boolean {
+  return s.children.some((c) => c.id !== 'demo-mila') || s.events.some((e) => e.childId !== 'demo-mila' && !e.deleted);
+}
+
 export function importJSON(text: string): Result<{ children: number; events: number }> {
   try {
     const s = sanitizeState(JSON.parse(text));
     if (!s) return { ok: false, error: 'Файл не похож на резервную копию «Дрёмы»' };
     forgetUndo();
     setState(s);
-    return { ok: true, value: { children: s.children.length, events: s.events.length } };
+    return { ok: true, value: { children: s.children.length, events: s.events.filter((e) => !e.deleted).length } };
   } catch {
     return { ok: false, error: 'Не удалось прочитать файл' };
   }

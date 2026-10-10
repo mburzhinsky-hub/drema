@@ -1,4 +1,5 @@
 /** Дети, участники семьи, профиль, данные: действия шторок и настроек. */
+import { plural } from '../engine/format';
 import { Gender, Member, Role } from '../engine/model';
 import { isoDate, now, parseISODate, startOfDay, DAY } from '../engine/time';
 import {
@@ -6,7 +7,9 @@ import {
   addMember,
   clearDemo,
   exportJSON,
+  hasUserData,
   importJSON,
+  inspectBackup,
   loadDemo,
   removeChild,
   removeMember,
@@ -173,12 +176,39 @@ export async function importFromFile(file: File): Promise<void> {
     return;
   }
   const text = await file.text();
-  const r = importFromText(text);
-  showToast(r.message);
-  if (r.ok) {
-    closeSheet();
-    go('/');
+  const info = inspectBackup(text);
+  if (!info.ok) {
+    showToast(info.error);
+    return;
   }
+  const finish = (): void => {
+    const r = importFromText(text);
+    showToast(r.message);
+    if (r.ok) {
+      closeSheet();
+      go('/');
+    }
+  };
+  // Копия заменяет всё, что есть на устройстве: если там уже что-то записано, сначала спрашиваем.
+  if (!hasUserData()) {
+    finish();
+    return;
+  }
+  const s = getState();
+  const mine = s.events.filter((e) => e.childId !== 'demo-mila' && !e.deleted).length;
+  const kids = s.children.filter((c) => c.id !== 'demo-mila').length;
+  const count = (c: number, e: number): string => `${c} ${plural(c, 'малыш', 'малыша', 'малышей')}, ${e} ${plural(e, 'запись', 'записи', 'записей')}`;
+  openSheet({
+    kind: 'confirm',
+    title: 'Заменить данные копией?',
+    text: `Сейчас на этом устройстве: ${count(kids, mine)}. В копии: ${count(info.value.children, info.value.events)}. Текущие данные будут заменены, вернуть их нельзя. Если они нужны, сначала сохраните копию.`,
+    confirm: 'Заменить',
+    danger: true,
+    run: () => {
+      closeSheet();
+      finish();
+    },
+  });
 }
 
 export function startDemo(): void {

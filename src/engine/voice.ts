@@ -6,7 +6,7 @@
  * («покормила 120 мл и поменяла подгузник»), у каждого может быть своё время.
  */
 import { DiaperKind, FeedHow, Gender } from './model';
-import { MIN, atMinutes, startOfDay } from './time';
+import { MIN, addDays, atMinutes, latestAtOrBefore, startOfDay } from './time';
 
 export type VoiceAction =
   | { kind: 'sleep-start'; t: number }
@@ -136,19 +136,13 @@ function latestPast(day: number, h: number, mins: number, now: number, ampm: str
     else if (ampm.startsWith('дн')) hh = h < 12 ? h + 12 : h;
     else if (ampm.startsWith('веч')) hh = h < 12 ? h + 12 : h;
     else if (ampm.startsWith('ноч')) hh = h === 12 ? 0 : h >= 6 && h < 12 ? h + 12 : h;
-    let t = atMinutes(day, (hh % 24) * 60 + mins);
-    if (t > now + MIN) t -= 86400000;
-    return t;
+    return latestAtOrBefore(day, (hh % 24) * 60 + mins, now);
   }
-  if (h >= 13 || h === 0) {
-    let t = atMinutes(day, (h % 24) * 60 + mins);
-    if (t > now + MIN) t -= 86400000;
-    return t;
-  }
+  if (h >= 13 || h === 0) return latestAtOrBefore(day, (h % 24) * 60 + mins, now);
   const cands: number[] = [];
-  for (const dd of [0, -86400000]) {
+  for (const back of [0, -1]) {
     for (const hh of [h % 12, (h % 12) + 12]) {
-      const t = atMinutes(day, hh * 60 + mins) + dd;
+      const t = atMinutes(addDays(day, back), hh * 60 + mins);
       if (t <= now + MIN) cands.push(t);
     }
   }
@@ -161,7 +155,7 @@ export function extractTime(clause: string, now: number): TimeHit {
   const today = startOfDay(now);
   const yesterday = ru(/\bвчера\b/).test(s);
   if (yesterday) s = s.replace(ru(/\bвчера\b/), ' ');
-  const day = yesterday ? today - 86400000 : today;
+  const day = yesterday ? addDays(today, -1) : today;
 
   const clean = (x: string): string => x.replace(/\s+/g, ' ').trim();
   const ago = (min: number, rest: string): TimeHit => ({ t: now - Math.round(min) * MIN, explicit: true, rest: clean(rest) });

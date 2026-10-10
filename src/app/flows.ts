@@ -2,12 +2,13 @@
 import { fmtDur } from '../engine/format';
 import { DremaEvent, FeedEvent, SleepEvent } from '../engine/model';
 import { activeSleep, sleepKind, sleepsOf } from '../engine/sleep';
-import { MIN, atMinutes, hm, now, startOfDay } from '../engine/time';
+import { MIN, atMinutes, hm, latestAtOrBefore, now, startOfDay } from '../engine/time';
 import { describeAction, parseVoice, VoiceAction } from '../engine/voice';
 import { words } from '../engine/words';
 import {
   activeChild,
   addEvent,
+  LONGEST_SLEEP,
   endSleep,
   logDiaper,
   logFeed,
@@ -19,6 +20,7 @@ import {
   undoTo,
   validateSleepTimes,
 } from '../store/actions';
+import { NOTE_MAX } from '../store/state';
 import { getState } from '../store/store';
 import { EntrySheet, SleepEditSheet, closeSheet, hideToast, invalidate, onSheetClose, openSheet, showToast, ui } from './ui';
 import { go } from './router';
@@ -42,6 +44,15 @@ export function quickSleep(stay = false): void {
 export function quickWake(stay = false): void {
   const c = activeChild();
   const before = c ? activeSleep(sleepsOf(getState().events, c.id)) : undefined;
+  if (before && now() - before.t > LONGEST_SLEEP) {
+    // Забыли нажать «проснулась»: честная запись на десятки часов испортила бы прогноз. Просим указать, когда проснулись.
+    const w = words(c?.gender ?? 'f');
+    openSleepEdit(before.id);
+    if (ui.sheet?.kind === 'sleep-edit') {
+      ui.sheet = { ...ui.sheet, ongoing: false, end: toLocalInput(now()), error: `Сон идёт больше 20 часов: похоже, не нажали «${w.wokeUp}». Укажите, когда это было.` };
+    }
+    return;
+  }
   const r = endSleep();
   if (!r.ok) {
     showToast(r.error);
@@ -217,8 +228,9 @@ function entryTime(sh: EntrySheet): number | string {
   const m = /^(\d{1,2}):(\d{2})$/.exec(sh.time);
   if (!m) return 'Укажите время';
   const ref = sh.editId ? (getState().events.find((e) => e.id === sh.editId)?.t ?? n) : n;
-  let t = atMinutes(startOfDay(ref), Number(m[1]) * 60 + Number(m[2]));
-  if (!sh.editId && t > n + MIN) t -= 86400000; // «в 23:50» утром — это вчера
+  const minutes = Number(m[1]) * 60 + Number(m[2]);
+  // «в 23:50» утром — это вчера (по календарю: в сутки перевода часов нельзя просто вычесть 24 часа)
+  const t = sh.editId ? atMinutes(startOfDay(ref), minutes) : latestAtOrBefore(startOfDay(ref), minutes, n);
   if (t > n + MIN) return 'Время ещё не наступило';
   return t;
 }
@@ -295,7 +307,7 @@ export function submitEntry(overrideDiaper?: DiaperKind): void {
     }
     case 'note':
       if (!sh.text.trim()) return fail('Напишите заметку');
-      data = { text: sh.text.trim() };
+      data = { text: sh.text.trim().slice(0, NOTE_MAX) };
       break;
   }
 
@@ -491,7 +503,7 @@ export function applyVoice(): void {
         done.push(text);
         break;
       case 'note':
-        addEvent({ type: 'note', t: a.t, text: a.text } as never, 'Заметка');
+        addEvent({ type: 'note', t: a.t, text: a.text.slice(0, NOTE_MAX) } as never, 'Заметка');
         done.push(text);
         break;
     }
