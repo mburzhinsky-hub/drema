@@ -36,6 +36,8 @@ const OUT = join(process.cwd(), '.visual');
 const only = process.argv[2];
 /** Допуск грубой сверки: доля отличающихся блоков 4×4. */
 const COARSE_TOLERANCE = 0.005;
+/** Допуск при масштабе страницы ≠ 100 %: дробная плотность пикселей сглаживает буквы иначе, ловим только сдвиги и потери блоков. */
+const COARSE_ZOOM_TOLERANCE = 0.05;
 
 /**
  * Грубая сверка: оба снимка усредняются блоками k×k и сравниваются заново.
@@ -73,9 +75,16 @@ async function main(): Promise<void> {
     // Без подгонки контуров букв под пиксельную сетку ширина текста одинакова на разных машинах.
     args: ['--font-render-hinting=none'],
   });
+  // VISUAL_PAGE_ZOOM=0.85 — как если бы браузер показывал страницу в масштабе 85 % (Safari «Масштаб страницы»):
+  // окно в css-пикселях шире (459 × 993), экран устройства прежний (390 × 844), снимок в физических пикселях тех же 390 × 844.
+  // Приложение обязано выглядеть так же, как при 100 % (грубая сверка).
+  const zoom = Number(process.env.VISUAL_PAGE_ZOOM ?? 1);
+  const vw = Math.round(390 / zoom);
+  const vh = Math.round(844 / zoom);
   const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 1,
+    viewport: { width: vw, height: vh },
+    ...(zoom !== 1 ? { screen: { width: 390, height: 844 } } : {}),
+    deviceScaleFactor: zoom === 1 ? 1 : 390 / vw,
     reducedMotion: 'reduce',
     locale: 'ru-RU',
     timezoneId: 'Europe/Moscow',
@@ -123,8 +132,8 @@ async function main(): Promise<void> {
     const coarse = coarseRatio(a, b);
     // На машине, где сняты эталоны, действует строгая сверка; на другой сборке Chromium — грубая (см. VISUAL_MODE).
     const strict = ratio <= t.tolerance;
-    const loose = coarse <= COARSE_TOLERANCE;
-    const ok = (process.env.VISUAL_MODE === 'coarse' ? loose : strict) && errors.length === 0;
+    const loose = coarse <= (zoom !== 1 ? COARSE_ZOOM_TOLERANCE : COARSE_TOLERANCE);
+    const ok = (process.env.VISUAL_MODE === 'coarse' || zoom !== 1 ? loose : strict) && errors.length === 0;
     if (!ok) failed++;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${t.fixture.padEnd(9)} отличий ${(ratio * 100).toFixed(3)}% (${n} px, допуск ${(t.tolerance * 100).toFixed(1)}%), грубо ${(coarse * 100).toFixed(3)}%${errors.length ? ' ошибки: ' + errors.join('; ') : ''}`);
   }

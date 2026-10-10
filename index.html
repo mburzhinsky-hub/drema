@@ -2,8 +2,9 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <!-- Масштаб закреплён: поле ввода и двойное касание не увеличивают экран. viewport-fit=cover — под вырезом и индикатором «Домой». -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <!-- Масштаб страницы закреплён (maximum-scale=1): поле ввода и двойное касание не увеличивают экран. viewport-fit=cover — под вырезом и индикатором «Домой».
+         Набор такой же, как у kids-go.fun, где на iPhone ничего не «плывёт»: без minimum-scale и user-scalable=no, которые iOS трактует по-своему. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#F1F3FB" />
     <meta name="description" content="Дрёма — трекер сна и кормления малыша, который знает, когда спать." />
     <meta name="apple-mobile-web-app-capable" content="yes" />

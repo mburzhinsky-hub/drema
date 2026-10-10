@@ -236,9 +236,12 @@ function draw(): void {
     </div>`;
   render(tpl, root);
 
+  // Фокус уходит на шторку, только когда она открылась (или сменилась), и только если он ещё не внутри неё.
+  // Состояние шторки обновляется новой копией на каждую набранную букву: без проверки фокус на каждой букве
+  // перескакивал бы с поля на шторку, и клавиатура закрывалась бы (текст вводился по одной букве).
   if (sheet && sheet !== lastSheet) {
     const el = root.querySelector<HTMLElement>('.sheet');
-    el?.focus({ preventScroll: true });
+    if (el && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
   }
   lastSheet = sheet;
 }

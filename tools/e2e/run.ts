@@ -51,9 +51,10 @@ const FAKE_VISUAL_VIEWPORT = (idleHeight: number | null): string => `
     };
   })();`;
 
-async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number }; touch?: boolean } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
+async function fresh(opts: { time?: Date; state?: unknown; speech?: Speech; keyboard?: boolean; vvIdle?: number; viewport?: { width: number; height: number }; screen?: { width: number; height: number }; touch?: boolean } = {}): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext({
     viewport: opts.viewport ?? { width: 390, height: 844 },
+    ...(opts.screen ? { screen: opts.screen } : {}),
     // Сенсорный экран: нужен, чтобы сработала оценка высоты клавиатуры (на компьютере поле в фокусе — не клавиатура).
     ...(opts.touch ? { isMobile: true, hasTouch: true } : {}),
     locale: 'ru-RU',
@@ -110,7 +111,11 @@ async function lacks(page: Page, re: RegExp): Promise<void> {
 }
 const home = (page: Page): Promise<unknown> => page.waitForFunction(() => location.hash === '#/' || location.hash === '');
 
+/** E2E_ONLY=подстрока — запустить только сценарии, в названии которых она есть. */
+const ONLY = process.env.E2E_ONLY;
+
 async function test(name: string, fn: () => Promise<void>): Promise<void> {
+  if (ONLY && !name.includes(ONLY)) return;
   try {
     await fn();
     results.push({ name, ok: true });
@@ -663,8 +668,9 @@ async function main(): Promise<void> {
 
     const meta = await (async () => { await page.goto(BASE, { waitUntil: 'load' }); return page.locator('meta[name=viewport]').getAttribute('content'); })();
     assert.match(meta ?? '', /maximum-scale=1/);
-    assert.match(meta ?? '', /user-scalable=no/);
     assert.match(meta ?? '', /viewport-fit=cover/);
+    // как у kids-go.fun: minimum-scale и user-scalable=no iOS трактует по-своему
+    assert.doesNotMatch(meta ?? '', /minimum-scale|user-scalable/);
 
     await page.getByRole('button', { name: /Начать/ }).click();
     await audit('знакомство');
@@ -854,6 +860,125 @@ async function main(): Promise<void> {
     const g = await geometry(page);
     assert.ok(g.sheet && Math.abs(g.sheet.bottom - 544) <= 1, `шторка по измеренной высоте: ${JSON.stringify(g.sheet)}`);
     assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+
+  await test('ввод текста: каждая буква попадает в поле, фокус и клавиатура не пропадают (все поля)', async () => {
+    // Настоящий набор по клавишам. Раньше состояние шторки обновлялось новой копией на каждую букву, и фокус
+    // уходил с поля на шторку: в поле оставалась одна буква, клавиатура закрывалась.
+    const { ctx, page, errors } = await fresh({ time: new Date('2026-10-10T13:42:00+03:00') });
+    const typed: string[] = [];
+    const typeInto = async (where: string, sel: string | ReturnType<Page['getByLabel']>, text: string, expected = text): Promise<void> => {
+      const loc = typeof sel === 'string' ? page.locator(sel) : sel;
+      await loc.first().focus();
+      // выделяем имеющееся содержимое (в «Объёме» уже стоит 120), набор его заменит
+      await loc.first().evaluate((el) => (el as HTMLInputElement).select?.());
+      const id = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.id ?? '');
+      for (const ch of text) {
+        await page.keyboard.type(ch);
+        const still = await page.evaluate(() => {
+          const a = document.activeElement as HTMLElement | null;
+          return { tag: a?.tagName ?? '', id: a?.id ?? '' };
+        });
+        assert.ok(/^(INPUT|TEXTAREA)$/.test(still.tag) && still.id === id, `${where}: после «${ch}» фокус ушёл с поля (${id}) на ${still.tag}#${still.id}`);
+      }
+      assert.equal(await loc.first().inputValue(), expected, `${where}: в поле должно быть «${expected}»`);
+      typed.push(where);
+    };
+    const settle = (): Promise<void> => page.waitForTimeout(150);
+
+    await page.goto(BASE, { waitUntil: 'load' });
+    await page.getByRole('button', { name: /Начать/ }).click();
+    await typeInto('знакомство: имя', page.getByLabel('Имя'), 'Саша Иванов');
+    await page.getByRole('button', { name: 'Сначала посмотреть на примере' }).click();
+    await page.waitForFunction(() => ['', '#/'].includes(location.hash));
+
+    // кормление
+    await page.getByRole('button', { name: 'Еда' }).click();
+    await settle();
+    await typeInto('кормление: объём', '#e-ml', '125');
+    await page.getByRole('radio', { name: 'Прикорм' }).click();
+    await settle();
+    await typeInto('кормление: что дали', page.getByLabel('Что дали'), 'каша гречневая');
+    await page.keyboard.press('Escape');
+
+    // другое
+    const more = async (label: string): Promise<void> => {
+      await page.getByRole('button', { name: 'Записать другое' }).click();
+      await page.getByRole('button', { name: new RegExp(label) }).click();
+      await settle();
+    };
+    await more('Температура');
+    await typeInto('температура', '#e-temp', '37,2');
+    await page.keyboard.press('Escape');
+    await more('Лекарство');
+    await typeInto('лекарство: название', page.getByLabel('Что дали'), 'Витамин Д');
+    await typeInto('лекарство: доза', page.getByLabel('Доза'), '2 капли');
+    await page.keyboard.press('Escape');
+    await more('Заметка');
+    await typeInto('заметка', '#e-text', 'Первый зуб, слева внизу');
+    await page.keyboard.press('Escape');
+
+    // голос (набор фразы)
+    await page.getByRole('button', { name: 'Записать другое' }).click();
+    await page.getByRole('button', { name: 'Сказать вслух' }).click();
+    await settle();
+    await typeInto('голос: фраза', page.getByLabel('Фраза'), 'покормила 120 мл и сменила подгузник');
+    await page.keyboard.press('Escape');
+
+    // отчёты
+    await page.getByRole('link', { name: 'Отчёты' }).click();
+    await settle();
+    await typeInto('отчёты: вопрос врачу', page.getByLabel('Вопрос врачу'), 'Нормальный ли ночной сон?');
+
+    // семья
+    await page.getByRole('link', { name: 'Семья' }).click();
+    await page.getByRole('button', { name: 'Пригласить по ссылке' }).click();
+    await settle();
+    await typeInto('приглашение: имя', '#i-name', 'Бабушка Люда');
+    await page.keyboard.press('Escape');
+
+    // профиль и дети
+    await page.evaluate(() => { location.hash = '#/'; });
+    await page.getByRole('button', { name: 'Выбрать ребёнка' }).click();
+    await page.getByRole('button', { name: 'Настройки' }).click();
+    await page.getByRole('button', { name: /Как вас подписывать/ }).click();
+    await settle();
+    await typeInto('профиль: имя', '#p-name', 'Папа Дима');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { location.hash = '#/'; });
+    await page.getByRole('button', { name: 'Выбрать ребёнка' }).click();
+    await page.getByRole('button', { name: 'Добавить малыша' }).click();
+    await settle();
+    await typeInto('новый малыш: имя', page.getByLabel('Имя'), 'Тимур');
+
+    assert.ok(typed.length >= 11, `проверено слишком мало полей: ${typed.join(', ')}`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+
+  await test('iPhone: страница в масштабе 85 % выравнивается — интерфейс того же размера, что при 100 %', async () => {
+    // Экран устройства 390 × 844, а окно страницы 459 × 993: браузер показывает страницу мельче. Приложение увеличивается в 1,177 раза.
+    const { ctx, page, errors } = await fresh({ viewport: { width: 459, height: 993 }, screen: { width: 390, height: 844 } });
+    await page.goto(`${BASE}?fixture=splash`, { waitUntil: 'load' });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const app = document.getElementById('app')!.getBoundingClientRect();
+      const btn = [...document.querySelectorAll('button')].find((b) => /Начать/.test(b.textContent ?? ''))!.getBoundingClientRect();
+      return { z: getComputedStyle(document.documentElement).getPropertyValue('--z').trim(), app: [app.left, app.top, app.right, app.bottom].map(Math.round), btnW: btn.width, btnLeft: btn.left };
+    });
+    assert.equal(m.z, '1.177');
+    assert.deepEqual(m.app, [0, 0, 459, 993], 'приложение всё равно на всё окно');
+    // в макете кнопка «Начать» шириной 350 с отступом 20: 350 × 1,177 = 412, 20 × 1,177 = 23,5
+    assert.ok(Math.abs(m.btnW - 412) <= 2 && Math.abs(m.btnLeft - 23.5) <= 2, `размеры как в макете: ширина ${m.btnW}, отступ ${m.btnLeft}`);
+    // при 100 % выравнивания нет
+    const normal = await fresh();
+    await normal.page.goto(`${BASE}?fixture=splash`, { waitUntil: 'load' });
+    assert.equal(await normal.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--z').trim()), '');
+    assert.deepEqual(errors, []);
+    await normal.ctx.close();
     await ctx.close();
   });
 

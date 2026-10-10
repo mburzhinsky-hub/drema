@@ -5,9 +5,11 @@
 
 /* Безопасные зоны экрана (вырез, строка состояния, индикатор «Домой»). Без выреза равны нулю, и вёрстка остаётся как в макете.
    При открытой клавиатуре нижняя зона не нужна: её закрывает сама клавиатура. */
+/* --z — выравнивание масштаба страницы (app/viewport.ts): 1, если страница показана как задумано.
+   Безопасные зоны отдаёт браузер в реальных пикселях, а приложение (#app) может быть увеличено на --z, поэтому делим. */
 :root {
-  --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
+  --sat: calc(env(safe-area-inset-top, 0px) / var(--z, 1));
+  --sab: calc(env(safe-area-inset-bottom, 0px) / var(--z, 1));
 }
 html.kb { --sab: 0px; }
 
@@ -72,9 +74,10 @@ input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-ca
     position: fixed;
     left: 0;
     right: 0;
-    top: var(--app-top, 0px);
-    bottom: var(--app-bottom, 0px);
+    top: calc(var(--app-top, 0px) / var(--z, 1));
+    bottom: calc(var(--app-bottom, 0px) / var(--z, 1));
     height: auto;
+    zoom: var(--z, 1);
   }
 }
 @media (max-width: 559px) {

@@ -87,6 +87,40 @@ export function canEstimate(win: Window): boolean {
   return win.matchMedia('(pointer: coarse)').matches && win.matchMedia('(max-width: 559px)').matches;
 }
 
+// ───────────── масштаб страницы ─────────────
+
+/** Размеры экрана устройства и окна страницы, как их отдаёт браузер. */
+export interface ScreenGeometry {
+  screenWidth: number;
+  screenHeight: number;
+  innerWidth: number;
+  innerHeight: number;
+}
+
+/** Экран короче этого, px, считается телефоном: на планшетах и компьютерах масштаб страницы не трогаем. */
+const PHONE_SHORT_SIDE = 500;
+/** Разница меньше этого — не масштаб, а погрешность (панели браузера, безопасные зоны). */
+const ZOOM_TOLERANCE = 0.08;
+
+/**
+ * Во сколько раз надо увеличить приложение, чтобы оно выглядело так, как нарисовано (390 px по ширине).
+ * Браузер может показывать страницу мельче или крупнее, чем 100 % (масштаб страницы для сайта в Safari,
+ * размер текста в Chrome): тогда окно оказывается шире или уже 390 px, и вся вёрстка выглядит мельче или крупнее задуманного.
+ * 1 — всё как задумано или устройство не телефон.
+ */
+export function layoutScale(g: ScreenGeometry): number {
+  const vals = [g.screenWidth, g.screenHeight, g.innerWidth, g.innerHeight];
+  if (vals.some((v) => !Number.isFinite(v) || v <= 0)) return 1;
+  const short = Math.min(g.screenWidth, g.screenHeight);
+  if (short > PHONE_SHORT_SIDE) return 1;
+  // iOS отдаёт размеры экрана портретными при любом повороте, поэтому ширину окна сравниваем с нужной стороной.
+  const portrait = g.innerHeight >= g.innerWidth;
+  const expected = portrait ? short : Math.max(g.screenWidth, g.screenHeight);
+  const z = g.innerWidth / expected;
+  if (Math.abs(z - 1) < ZOOM_TOLERANCE) return 1;
+  return Math.round(Math.min(2, Math.max(0.5, z)) * 1000) / 1000;
+}
+
 /** Какие поля вводят текст: у кнопок, флажков и файлов клавиатуры нет. */
 const TEXTUAL = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', 'datetime-local', '']);
 
@@ -103,6 +137,14 @@ export function startViewport(win: Window = window, doc: Document = document): (
   const layoutHeight = (): number => html.clientHeight || win.innerHeight;
   const area = (): VisibleArea | null => (vv ? { height: vv.height, offsetTop: vv.offsetTop, scale: vv.scale } : null);
   let base = baselineOf(layoutHeight(), area());
+  /** Выравнивание масштаба страницы: --z на <html>; при 1 свойство убирается, и вёрстка остаётся как есть. */
+  const scale = (): void => {
+    const z = win.screen
+      ? layoutScale({ screenWidth: win.screen.width, screenHeight: win.screen.height, innerWidth: win.innerWidth, innerHeight: win.innerHeight })
+      : 1;
+    if (z === 1) html.style.removeProperty('--z');
+    else html.style.setProperty('--z', String(z));
+  };
   /** Браузер молчит о клавиатуре, а поле в фокусе дольше ESTIMATE_AFTER_MS: считаем высоту клавиатуры по доле экрана. */
   let estimating = false;
 
@@ -117,6 +159,7 @@ export function startViewport(win: Window = window, doc: Document = document): (
       estimating = false;
     }
     // Измеренное важнее оценки: как только браузер сообщил реальные числа, берём их.
+    scale();
     const measured = appInsets(lh, now, base);
     const ins = !measured.keyboard && estimating ? estimatedInsets(lh) : measured;
     html.style.setProperty('--app-top', `${ins.top}px`);

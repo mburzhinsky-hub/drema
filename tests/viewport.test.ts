@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Baseline, KEYBOARD_MIN_PX, KEYBOARD_SHARE, appInsets, baselineOf, canEstimate, estimatedInsets, isTextField, startViewport } from '../src/app/viewport';
+import { Baseline, KEYBOARD_MIN_PX, KEYBOARD_SHARE, appInsets, baselineOf, canEstimate, estimatedInsets, isTextField, layoutScale, startViewport } from '../src/app/viewport';
 
 const NONE = { top: 0, bottom: 0, keyboard: false };
 
@@ -69,6 +69,48 @@ describe('appInsets: где стоит приложение', () => {
   });
 });
 
+describe('layoutScale: масштаб страницы, при котором приложение выглядит не так, как нарисовано', () => {
+  const phone = { screenWidth: 390, screenHeight: 844 };
+
+  it('всё как задумано: окно 390 px — выравнивать нечего', () => {
+    expect(layoutScale({ ...phone, innerWidth: 390, innerHeight: 844 })).toBe(1);
+    expect(layoutScale({ ...phone, innerWidth: 390, innerHeight: 760 })).toBe(1); // Safari с панелями
+  });
+
+  it('страница показана в масштабе 85 %: окно 459 px — приложение увеличивается в 1,177 раза', () => {
+    expect(layoutScale({ ...phone, innerWidth: 459, innerHeight: 993 })).toBe(1.177);
+  });
+
+  it('страница увеличена до 125 %: окно 312 px — приложение уменьшается до задуманного размера', () => {
+    expect(layoutScale({ ...phone, innerWidth: 312, innerHeight: 675 })).toBe(0.8);
+  });
+
+  it('небольшие отличия (безопасные зоны, полоса прокрутки) — не масштаб', () => {
+    expect(layoutScale({ ...phone, innerWidth: 375, innerHeight: 800 })).toBe(1);
+    expect(layoutScale({ ...phone, innerWidth: 414, innerHeight: 800 })).toBe(1);
+  });
+
+  it('альбомная ориентация: iOS отдаёт экран портретным, ширину сравниваем с длинной стороной', () => {
+    expect(layoutScale({ ...phone, innerWidth: 844, innerHeight: 390 })).toBe(1);
+    expect(layoutScale({ ...phone, innerWidth: 993, innerHeight: 459 })).toBe(1.177);
+  });
+
+  it('планшеты и компьютеры не трогаем', () => {
+    expect(layoutScale({ screenWidth: 820, screenHeight: 1180, innerWidth: 964, innerHeight: 1388 })).toBe(1);
+    expect(layoutScale({ screenWidth: 1920, screenHeight: 1080, innerWidth: 1200, innerHeight: 700 })).toBe(1);
+  });
+
+  it('мусорные значения не ломают', () => {
+    expect(layoutScale({ screenWidth: 0, screenHeight: 0, innerWidth: 0, innerHeight: 0 })).toBe(1);
+    expect(layoutScale({ ...phone, innerWidth: NaN, innerHeight: 800 })).toBe(1);
+  });
+
+  it('крайние значения ограничены', () => {
+    expect(layoutScale({ screenWidth: 100, screenHeight: 200, innerWidth: 900, innerHeight: 1800 })).toBe(2);
+    expect(layoutScale({ screenWidth: 400, screenHeight: 800, innerWidth: 100, innerHeight: 300 })).toBe(0.5);
+  });
+});
+
 describe('оценка клавиатуры, когда браузер о ней молчит', () => {
   it('доля экрана: на 844 px клавиатура с полосой «готово» занимает около 388', () => {
     expect(estimatedInsets(844)).toEqual({ top: 0, bottom: Math.round(844 * KEYBOARD_SHARE), keyboard: true });
@@ -133,7 +175,7 @@ describe('isTextField: у каких полей есть клавиатура', 
 
 type Handler = (e?: unknown) => void;
 
-function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean; phone?: boolean } = {}) {
+function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean; phone?: boolean; innerWidth?: number } = {}) {
   const layout = opts.layout ?? 844;
   const classes = new Set<string>();
   const style: Record<string, string> = {};
@@ -149,6 +191,8 @@ function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean; pho
   const scrollingElement = { scrollTop: 0 };
   const win = {
     innerHeight: layout,
+    innerWidth: opts.innerWidth ?? 390,
+    screen: { width: 390, height: 844 },
     scrollX: 0,
     scrollY: 0,
     visualViewport: opts.vv === false ? null : vv,
@@ -165,7 +209,7 @@ function fakeEnv(opts: { layout?: number; idleHeight?: number; vv?: boolean; pho
   const doc = {
     documentElement: {
       clientHeight: layout,
-      style: { setProperty: (k: string, v: string) => void (style[k] = v) },
+      style: { setProperty: (k: string, v: string) => void (style[k] = v), removeProperty: (k: string) => void delete style[k] },
       classList: { add: (c: string) => classes.add(c), toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)), contains: (c: string) => classes.has(c) },
     },
     scrollingElement,
@@ -358,6 +402,23 @@ describe('startViewport: привязка к видимой области', () 
     e.fire(e.listeners, 'focusin', { target: field });
     e.runTimers();
     expect(order).toEqual([`scroll(bottom=${Math.round(844 * KEYBOARD_SHARE)}px)`]);
+  });
+
+  it('страница показана в масштабе 85 %: на <html> ставится --z, при возврате к 100 % убирается', () => {
+    const e = fakeEnv({ innerWidth: 459, layout: 993 });
+    start(e);
+    expect(e.style['--z']).toBe('1.177');
+    e.win.innerWidth = 390;
+    e.win.innerHeight = 844;
+    e.doc.documentElement.clientHeight = 844;
+    e.resize(844);
+    expect(e.style['--z']).toBeUndefined();
+  });
+
+  it('обычный экран: --z не ставится вовсе (вёрстка не меняется)', () => {
+    const e = fakeEnv();
+    start(e);
+    expect(e.style['--z']).toBeUndefined();
   });
 
   it('страницу, подкрученную браузером, возвращает на место', () => {
